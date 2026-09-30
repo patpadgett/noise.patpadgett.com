@@ -265,7 +265,7 @@ export class Editor {
   }
   computeGeom() {
     const touch = matchMedia('(pointer: coarse)').matches || this.w < 700;
-    const labelW = this.mode === 'pattern' ? (touch ? 72 : 84) : (touch ? 96 : 132);
+    const labelW = this.mode === 'pattern' ? (touch ? 76 : 100) : (touch ? 96 : 132);
     const rulerH = 22;
     if (this.mode === 'pattern') {
       const pat = this.pattern();
@@ -604,9 +604,10 @@ export class Editor {
   colors() {
     if (this._colors) return this._colors;
     this._colors = {
-      lacquer: css('--lacquer') || '#0c0a09', panel: css('--panel') || '#151210', cream: css('--cream') || '#f1e6c8',
-      red: css('--strip-red') || '#b52e22', blue: css('--strip-blue') || '#2d5ea8', bulb: css('--bulb') || '#f0a93a',
-      chrome: '#b8b6ae', ink: '#1a1512', dim: 'rgba(241,230,200,.14)', dim2: 'rgba(241,230,200,.06)',
+      // synthwave: lacquer = night ground, cream = chrome key face, bulb = laser magenta, blue = cyan accent
+      lacquer: css('--night') || '#0a0514', panel: css('--panel') || '#150c2a', cream: css('--chrome') || '#dbe2f4',
+      red: css('--mag-deep') || '#a5127f', blue: css('--cyan') || '#19e6ff', bulb: css('--mag') || '#ff2bd6',
+      chrome: '#8b94ad', ink: '#1a1230', dim: 'rgba(25,230,255,.14)', dim2: 'rgba(219,226,244,.06)',
     };
     return this._colors;
   }
@@ -691,7 +692,7 @@ export class Editor {
     // playhead column glow
     if (ph >= 0) {
       const x = x0 + ph * g.cellW - sx;
-      c.fillStyle = 'rgba(240,169,58,.10)'; c.fillRect(x, y0, g.cellW, g.viewH);
+      c.fillStyle = 'rgba(255,43,214,.10)'; c.fillRect(x, y0, g.cellW, g.viewH);
     }
     // notes
     const drawNote = (n, ghost) => {
@@ -712,12 +713,12 @@ export class Editor {
       roundRect(c, x + 1, y + hgt - pad - vh, Math.min(w - 2, 5), vh, 1.5); c.fill();
       if (isSel && !ghost) { c.strokeStyle = C.bulb; c.lineWidth = 2; roundRect(c, x + 1, y + pad, w - 2, hgt - pad * 2, 3); c.stroke(); }
       if (n.g || n.r) {
-        c.fillStyle = C.ink; c.font = `700 ${Math.min(11, hgt - 6)}px "League Gothic", Impact, sans-serif`;
+        c.fillStyle = C.ink; c.font = `700 ${Math.min(11, hgt - 6)}px Michroma, "Arial Narrow", sans-serif`;
         c.textBaseline = 'middle'; c.textAlign = 'left';
         if (w > 22) c.fillText(n.g ? 'SLIDE' : 'REV', x + 9, y + hgt / 2 + 0.5);
       }
       if (g.kind === 'drums' && w > 30 && !n.g) {
-        c.fillStyle = 'rgba(26,21,18,.75)'; c.font = `500 9px "Special Elite", "Courier New", monospace`; c.textBaseline = 'middle'; c.textAlign = 'right';
+        c.fillStyle = 'rgba(26,18,48,.75)'; c.font = `500 9px Michroma, "Arial Narrow", sans-serif`; c.textBaseline = 'middle'; c.textAlign = 'right';
         c.fillText(Math.round(n.v * 100), x + w - 5, y + hgt / 2 + 1);
       }
       c.globalAlpha = 1;
@@ -751,7 +752,7 @@ export class Editor {
       c.fillRect(x + 2, vy + g.velH - 3 - hgt, Math.max(2, g.cellW - 4), hgt);
     }
     c.restore();
-    c.fillStyle = 'rgba(241,230,200,.55)'; c.font = `700 10px "League Gothic", Impact, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
+    c.fillStyle = 'rgba(219,226,244,.55)'; c.font = `700 10px Michroma, "Arial Narrow", sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
     c.fillText('VELOCITY', 8, vy + g.velH / 2);
     // labels
     c.fillStyle = C.panel; c.fillRect(0, y0, g.labelW, g.viewH);
@@ -761,13 +762,13 @@ export class Editor {
       if (y > this.h || y + g.rowH < y0) continue;
       const row = g.rows[r];
       const isC = g.kind === 'melodic' && row.n % 12 === 0;
-      // cream title strip per row (keys), the jukebox way
-      c.fillStyle = row.black ? '#1d1815' : C.cream;
+      // chrome key per row
+      c.fillStyle = row.black ? '#1c1038' : C.cream;
       roundRect(c, 6, y + 1.5, g.labelW - 12, g.rowH - 3, 2); c.fill();
       c.fillStyle = row.black ? 'rgba(241,230,200,.7)' : C.ink;
-      c.font = `${g.kind === 'melodic' ? 500 : 500} ${Math.min(12, g.rowH - 6)}px "Special Elite", "Courier New", monospace`;
+      c.font = `${g.kind === 'melodic' ? 500 : 500} ${Math.min(12, g.rowH - 6)}px Michroma, "Arial Narrow", sans-serif`;
       c.textAlign = 'left'; c.textBaseline = 'middle';
-      c.fillText(g.touch && row.label === 'OPEN HAT' ? 'O.HAT' : row.label, 12, y + g.rowH / 2 + 1);
+      c.fillText((g.touch || g.labelW < 112) && row.label === 'OPEN HAT' ? 'O.HAT' : row.label, 12, y + g.rowH / 2 + 1);
       if (isC || g.kind !== 'melodic') { c.fillStyle = accent; c.fillRect(g.labelW - 10, y + 3, 2, g.rowH - 6); }
     }
     c.restore();
@@ -775,17 +776,22 @@ export class Editor {
     c.fillStyle = C.panel; c.fillRect(0, 0, this.w, g.rulerH);
     c.fillStyle = C.dim; c.fillRect(0, g.rulerH - 1, this.w, 1);
     c.save(); c.beginPath(); c.rect(x0, 0, g.viewW, g.rulerH); c.clip();
-    c.font = `700 11px "League Gothic", Impact, sans-serif`; c.textBaseline = 'middle'; c.textAlign = 'left';
+    c.font = `700 11px Michroma, "Arial Narrow", sans-serif`; c.textBaseline = 'middle'; c.textAlign = 'left';
     for (let s = 0; s < g.steps; s++) {
       const x = x0 + s * g.cellW - sx;
-      if (s % 4 === 0) { c.fillStyle = s % 16 === 0 ? C.cream : 'rgba(241,230,200,.5)'; c.fillText(s % 16 === 0 ? `BAR ${s / 16 + 1}` : `${(s % 16) / 4 + 1}`, x + 4, g.rulerH / 2 + 1); }
+      if (s % 4 === 0) { c.fillStyle = s % 16 === 0 ? C.cream : 'rgba(219,226,244,.5)'; c.fillText(s % 16 === 0 ? `BAR ${s / 16 + 1}` : `${(s % 16) / 4 + 1}`, x + 4, g.rulerH / 2 + 1); }
       if (ph === s) { c.fillStyle = C.bulb; c.beginPath(); c.moveTo(x + g.cellW / 2 - 5, 2); c.lineTo(x + g.cellW / 2 + 5, 2); c.lineTo(x + g.cellW / 2, 9); c.fill(); }
     }
     c.restore();
     // corner: device + pattern name strip
     c.fillStyle = accent; c.fillRect(0, 0, g.labelW, g.rulerH);
-    c.fillStyle = C.cream; c.font = `700 12px "League Gothic", Impact, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
-    c.fillText(`${T.name.split(' ')[0]} · ${pat.name}`, 8, g.rulerH / 2 + 1);
+    c.fillStyle = C.ink; c.font = `700 10px Michroma, "Arial Narrow", sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
+    c.save(); c.beginPath(); c.rect(0, 0, g.labelW - 4, g.rulerH); c.clip();
+    let chip = `${T.name.split(' ')[0]} · ${pat.name}`;
+    while (chip.length > 3 && c.measureText(chip).width > g.labelW - 12) chip = chip.slice(0, -2) + '…';
+    c.fillText(chip, 6, g.rulerH / 2 + 1);
+    c.fillStyle = C.panel; c.fillRect(g.labelW - 3, 0, 3, g.rulerH);
+    c.restore();
   }
   drawSong(c, g, C, song, absStep) {
     const sx = this.scroll.x, sy = this.scroll.y, x0 = g.labelW, y0 = g.rulerH;
@@ -846,7 +852,7 @@ export class Editor {
       const accent = row.color === 'red' ? C.red : C.blue;
       c.fillStyle = C.cream; roundRect(c, 6, y + 4, g.labelW - 12, g.rowH - 8, 2); c.fill();
       c.fillStyle = accent; c.fillRect(6, y + 4, 4, g.rowH - 8);
-      c.fillStyle = row.dev.muted ? 'rgba(26,21,18,.4)' : C.ink; c.font = `700 ${Math.min(15, g.rowH - 14)}px "League Gothic", Impact, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
+      c.fillStyle = row.dev.muted ? 'rgba(26,18,48,.4)' : C.ink; c.font = `700 ${Math.min(15, g.rowH - 14)}px Michroma, "Arial Narrow", sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
       c.fillText(row.label + (row.dev.muted ? '  (MUTED)' : ''), 16, y + g.rowH / 2 + 1);
     }
     // ruler
@@ -855,16 +861,16 @@ export class Editor {
     c.save(); c.beginPath(); c.rect(x0, 0, g.viewW, g.rulerH); c.clip();
     if (loop.on) { c.fillStyle = 'rgba(240,169,58,.35)'; c.fillRect(x0 + loop.startBar * g.cellW - sx, 0, (loop.endBar - loop.startBar) * g.cellW, g.rulerH - 1); }
     if (this.drag?.kind === 'loop' && this.drag.moved) { const a = Math.min(this.drag.start, this.drag.end), bb = Math.max(this.drag.start, this.drag.end) + 1; c.fillStyle = 'rgba(240,169,58,.5)'; c.fillRect(x0 + a * g.cellW - sx, 0, (bb - a) * g.cellW, g.rulerH - 1); }
-    c.font = `700 11px "League Gothic", Impact, sans-serif`; c.textBaseline = 'middle'; c.textAlign = 'left';
+    c.font = `700 11px Michroma, "Arial Narrow", sans-serif`; c.textBaseline = 'middle'; c.textAlign = 'left';
     for (let b = 0; b < g.bars; b++) {
       const x = x0 + b * g.cellW - sx;
-      c.fillStyle = b >= song.arrangement.bars ? 'rgba(241,230,200,.25)' : (b % 4 === 0 ? C.cream : 'rgba(241,230,200,.5)');
+      c.fillStyle = b >= song.arrangement.bars ? 'rgba(219,226,244,.25)' : (b % 4 === 0 ? C.cream : 'rgba(219,226,244,.5)');
       c.fillText(String(b + 1), x + 4, g.rulerH / 2 + 1);
     }
     if (curBar >= 0) { const x = x0 + (absStep / STEPS_PER_BAR) * g.cellW - sx; c.fillStyle = C.bulb; c.beginPath(); c.moveTo(x - 5, 2); c.lineTo(x + 5, 2); c.lineTo(x, 9); c.fill(); }
     c.restore();
     c.fillStyle = C.bulb; c.fillRect(0, 0, g.labelW, g.rulerH);
-    c.fillStyle = C.ink; c.font = `700 12px "League Gothic", Impact, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
+    c.fillStyle = C.ink; c.font = `700 12px Michroma, "Arial Narrow", sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
     c.fillText(`${song.title || 'UNTITLED'}`.slice(0, 22), 8, g.rulerH / 2 + 1);
   }
 }
@@ -879,7 +885,7 @@ function drawBlock(c, C, g, row, b, x, y, accent, sel, on, ghost) {
   c.fillStyle = accent; c.fillRect(x + 2, y + 5, w - 4, 3);
   c.fillStyle = accent === C.red ? C.blue : C.red; c.fillRect(x + 2, y + g.rowH - 8, w - 4, 3);
   if (sel) { c.strokeStyle = C.bulb; c.lineWidth = 2; roundRect(c, x + 2, y + 5, w - 4, g.rowH - 10, 4); c.stroke(); }
-  c.fillStyle = C.ink; c.font = `700 ${Math.min(16, g.rowH - 18)}px "League Gothic", Impact, sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
+  c.fillStyle = C.ink; c.font = `700 ${Math.min(16, g.rowH - 18)}px Michroma, "Arial Narrow", sans-serif`; c.textAlign = 'left'; c.textBaseline = 'middle';
   c.fillText(pat ? pat.name : '?', x + 9, y + g.rowH / 2 + 1);
   // mini note density
   if (pat && w > 40) {

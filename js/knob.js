@@ -33,11 +33,11 @@ export class Knob {
     el.innerHTML = `
       <div class="knob__cap" role="slider" tabindex="0" aria-label="${p.label}" aria-valuemin="${p.min}" aria-valuemax="${p.max}" aria-valuenow="${value}" aria-valuetext="${fmtValue(p, value)}">
         <svg viewBox="0 0 64 64" aria-hidden="true">
-          <path class="knob__arc-bg" d="" fill="none" stroke="#231d19" stroke-width="3" stroke-linecap="round"/>
-          <path class="knob__arc" d="" fill="none" stroke="var(--bulb)" stroke-width="3" stroke-linecap="round"/>
+          <path class="knob__arc-bg" d="" fill="none" stroke="#1e1338" stroke-width="3" stroke-linecap="round"/>
+          <path class="knob__arc" d="" fill="none" stroke="var(--mag)" stroke-width="3" stroke-linecap="round"/>
           <circle cx="32" cy="32" r="21" fill="url(#kchrome)"/>
-          <circle cx="32" cy="32" r="17" fill="url(#kcap)" stroke="#0b0908" stroke-width=".8"/>
-          <g class="knob__ptr"><rect x="31" y="16.5" width="2" height="9" rx="1" fill="var(--cream)"/></g>
+          <circle cx="32" cy="32" r="17" fill="url(#kcap)" stroke="#05030c" stroke-width=".8"/>
+          <g class="knob__ptr"><rect x="31" y="16.5" width="2" height="9" rx="1" fill="var(--white)"/></g>
         </svg>
       </div>
       <div class="knob__label">${p.label}</div>

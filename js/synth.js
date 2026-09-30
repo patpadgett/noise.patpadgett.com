@@ -53,6 +53,19 @@ export function driveCurve(amount) {
   curveCache.set(k, c);
   return c;
 }
+// hard clipper with a small knee; threshold 0.5..1
+export function clipCurve(th) {
+  const k = 'h' + th.toFixed(3);
+  if (curveCache.has(k)) return curveCache.get(k);
+  const n = 2048, c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const a = Math.abs(x);
+    c[i] = a <= th ? x : Math.sign(x) * (th + (1 - th) * Math.tanh((a - th) / (1 - th) * 2.5) / Math.tanh(2.5));
+  }
+  curveCache.set(k, c);
+  return c;
+}
 // gentle tape curve: unity slope at zero, soft knee toward ±1; amount 0 is a straight line
 export function tapeCurve(amount) {
   const k = 't' + amount.toFixed(3);
@@ -136,24 +149,55 @@ class Device {
   dispose() { this.stopAll(); try { this.analyser.disconnect(); } catch (e) {} }
 }
 
-// ---------- HEARSE : the 808 that slides ----------
+// ---------- TRUNK (class Hearse) : the 808 that slides and distorts ----------
 export class Hearse extends Device {
   constructor(ctx, dest, def, engine) {
     super(ctx, dest, def, engine);
+    // pre-gain -> tanh drive -> hard clip -> tone: the phonk 808 is distorted, not polite
+    this.pre = ctx.createGain();
+    this.pre.gain.value = 1 + this.params.coffin * 3;
     this.shaper = ctx.createWaveShaper();
     this.shaper.curve = driveCurve(this.params.coffin);
-    this.shaper.oversample = '2x';
+    this.shaper.oversample = '4x';
+    this.clip = ctx.createWaveShaper();
+    this.clip.curve = clipCurve(0.85 - this.params.coffin * 0.25);
+    this.clip.oversample = '2x';
     this.lp = ctx.createBiquadFilter();
     this.lp.type = 'lowpass';
     this.lp.frequency.value = this.params.tone;
-    this.lp.Q.value = 0.9;
-    this.shaper.connect(this.lp);
-    this.lp.connect(this.out);
+    this.lp.Q.value = 1.1;
+    this.post = ctx.createGain();
+    this.post.gain.value = 1 / (1 + this.params.coffin * 0.8);
+    this.pre.connect(this.shaper);
+    this.shaper.connect(this.clip);
+    this.clip.connect(this.lp);
+    this.lp.connect(this.post);
+    this.post.connect(this.out);
     this.voice = null;
   }
   onParam(n, v) {
-    if (n === 'coffin') this.shaper.curve = driveCurve(v);
+    if (n === 'coffin') {
+      this.pre.gain.setTargetAtTime(1 + v * 3, this.ctx.currentTime, 0.02);
+      this.shaper.curve = driveCurve(v);
+      this.clip.curve = clipCurve(0.85 - v * 0.25);
+      this.post.gain.setTargetAtTime(1 / (1 + v * 0.8), this.ctx.currentTime, 0.02);
+    }
     if (n === 'tone') this.lp.frequency.setTargetAtTime(v, this.ctx.currentTime, 0.02);
+  }
+  // 808 envelope: 4ms attack, natural decay toward a sustain floor, then hold until the note ends
+  // and release. The note's length is musical (durSec), so a long note keeps the room shaking.
+  shape(gainParam, t, vel, durSec) {
+    const p = this.params;
+    const floor = 0.42 * vel, tau = Math.max(0.05, p.decay * 0.55);
+    const hold = Math.max(0.06, durSec);
+    gainParam.cancelScheduledValues(t);
+    gainParam.setValueAtTime(Math.max(0.0001, gainParam.value), t);
+    gainParam.linearRampToValueAtTime(vel, t + 0.004);
+    gainParam.setTargetAtTime(floor, t + 0.004, tau);
+    const atEnd = floor + (vel - floor) * Math.exp(-(hold - 0.004) / tau);
+    gainParam.setValueAtTime(atEnd, t + hold);
+    gainParam.exponentialRampToValueAtTime(0.0001, t + hold + 0.09);
+    return t + hold + 0.1;
   }
   noteOn(t, midi, vel = 1, durSec = 0.5, opts = {}) {
     const ctx = this.ctx;
@@ -168,11 +212,7 @@ export class Hearse extends Device {
         o.osc.frequency.setValueAtTime(o.osc.frequency.value, t);
         o.osc.frequency.exponentialRampToValueAtTime(f * o.mult, t + glide);
       }
-      v.gain.gain.cancelScheduledValues(t);
-      v.gain.gain.setValueAtTime(Math.max(0.05, v.gain.gain.value), t);
-      v.gain.gain.linearRampToValueAtTime(0.9 * vel, t + 0.01);
-      v.gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.01 + p.decay);
-      const until = t + p.decay + 0.05;
+      const until = this.shape(v.gain.gain, t, 0.95 * vel, durSec);
       for (const o of v.oscs) o.osc.stop(until);
       v.until = until;
       return;
@@ -204,17 +244,15 @@ export class Hearse extends Device {
     mk('sine', 1, 1);
     mk('triangle', 1, 0.25);
     if (p.rumble > 0.01) mk('sine', 0.5, p.rumble * 0.8);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.linearRampToValueAtTime(0.9 * vel, t + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.004 + p.decay);
-    gain.connect(this.shaper);
-    const until = t + p.decay + 0.05;
+    gain.gain.value = 0.0001;
+    const until = this.shape(gain.gain, t, vel, durSec);
+    gain.connect(this.pre);
     for (const o of oscs) o.osc.stop(until);
     this.voice = { oscs, gain, until };
   }
 }
 
-// ---------- COWBELL CATHEDRAL : the melody of the genre ----------
+// ---------- LAZERBELL (class Cathedral) : the cowbell hook ----------
 export class Cathedral extends Device {
   constructor(ctx, dest, def, engine) {
     super(ctx, dest, def, engine);
@@ -227,12 +265,20 @@ export class Cathedral extends Device {
     this.conv.connect(this.out);
     this.dry.gain.value = 1;
     this.wet.gain.value = this.params.nave;
+    this.grit = ctx.createWaveShaper();
+    this.grit.curve = driveCurve((this.params.grit ?? 0) * 0.7);
+    this.grit.oversample = '2x';
+    this.gritGain = ctx.createGain();
+    this.gritGain.gain.value = 1 + (this.params.grit ?? 0) * 1.5;
     this.pre = ctx.createGain();
-    this.pre.connect(this.dry);
-    this.pre.connect(this.wet);
+    this.pre.connect(this.gritGain);
+    this.gritGain.connect(this.grit);
+    this.grit.connect(this.dry);
+    this.grit.connect(this.wet);
   }
   onParam(n, v) {
     if (n === 'nave') this.wet.gain.setTargetAtTime(v, this.ctx.currentTime, 0.03);
+    if (n === 'grit') { this.grit.curve = driveCurve(v * 0.7); this.gritGain.gain.setTargetAtTime(1 + v * 1.5, this.ctx.currentTime, 0.02); }
   }
   noteOn(t, midi, vel = 1, durSec = 0.25) {
     const ctx = this.ctx, p = this.params;
@@ -273,7 +319,7 @@ export class Cathedral extends Device {
   }
 }
 
-// ---------- PREACHER : formant stabs that almost say something ----------
+// ---------- TALKBOX (class Preacher) : formant chants ----------
 const VOWELS = [
   { f: [800, 1150, 2900], g: [1, 0.5, 0.25], q: [8, 10, 12] },   // A
   { f: [400, 1600, 2700], g: [1, 0.35, 0.2], q: [9, 10, 12] },   // E
@@ -354,7 +400,7 @@ export class Preacher extends Device {
   }
 }
 
-// ---------- BREAKER : the drum machine ----------
+// ---------- V12 (class Breaker) : the drum machine ----------
 export const BREAKER_LANES = ['KICK', 'SNARE', 'CLAP', 'HAT', 'OPEN HAT', 'RIM', 'TOM', 'CRASH'];
 export class Breaker extends Device {
   constructor(ctx, dest, def, engine) {
@@ -387,15 +433,15 @@ export class Breaker extends Device {
       case 0: { // KICK
         const o = ctx.createOscillator(); o.type = 'sine';
         const g = ctx.createGain();
-        o.frequency.setValueAtTime(160 * tune, t);
-        o.frequency.exponentialRampToValueAtTime(48 * tune, t + 0.045);
-        env(g.gain, t, 1.1 * vel, 0.002, 0.28 * dec + 0.08);
-        const sh = ctx.createWaveShaper(); sh.curve = driveCurve(0.18);
+        o.frequency.setValueAtTime(190 * tune, t);
+        o.frequency.exponentialRampToValueAtTime(46 * tune, t + 0.04);
+        env(g.gain, t, 1.5 * vel, 0.0015, 0.24 * dec + 0.06);
+        const sh = ctx.createWaveShaper(); sh.curve = driveCurve(0.3);
         o.connect(g); g.connect(sh); sh.connect(out);
         o.start(t); o.stop(t + 0.5 * dec + 0.2); this.track(o);
         const n = noiseSource(ctx, t, 0.01);
-        const ng = ctx.createGain(); env(ng.gain, t, 0.35 * vel, 0.001, 0.008);
-        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2000;
+        const ng = ctx.createGain(); env(ng.gain, t, 0.5 * vel, 0.001, 0.009);
+        const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800;
         n.connect(hp); hp.connect(ng); ng.connect(out); this.track(n);
         break;
       }
@@ -485,7 +531,7 @@ export class Breaker extends Device {
   }
 }
 
-// ---------- CAROUSEL : the slice player. Chopped audio, one 45 per slice. ----------
+// ---------- TAPE DECK (class Carousel) : the slice player ----------
 export class Carousel extends Device {
   constructor(ctx, dest, def, engine) {
     super(ctx, dest, def, engine);
@@ -556,7 +602,7 @@ export class Carousel extends Device {
   }
 }
 
-// ---------- SCREWTAPE : master tape stage ----------
+// ---------- EXHAUST (class Screwtape) : master tape stage ----------
 export class Screwtape {
   constructor(ctx, dest, params) {
     this.ctx = ctx;
@@ -599,11 +645,11 @@ export class Screwtape {
     this.hissFilter.connect(this.hissGain);
     this.hissSrc.start();
     this.comp = ctx.createDynamicsCompressor();
-    this.comp.threshold.value = -9;
-    this.comp.knee.value = 8;
-    this.comp.ratio.value = 3.5;
-    this.comp.attack.value = 0.008;
-    this.comp.release.value = 0.18;
+    this.comp.threshold.value = -12;
+    this.comp.knee.value = 12;
+    this.comp.ratio.value = 2.4;
+    this.comp.attack.value = 0.022; // let the kick's first 20ms through untouched
+    this.comp.release.value = 0.22;
     this.master = ctx.createGain();
     this.master.gain.value = this.params.level;
     this.analyser = ctx.createAnalyser();
@@ -658,23 +704,29 @@ export class Screwtape {
 
 // ---------- UI sounds: the coin drop ----------
 export function coinDrop(ctx, dest, t = ctx.currentTime) {
+  // ignition: starter whine rising, the engine catching (three low pulses), then a sub thump as the dash lights
   const g = ctx.createGain();
   g.connect(dest);
-  const clink = (tt, f, d, a) => {
-    const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
-    const og = ctx.createGain(); env(og.gain, tt, a, 0.001, d);
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 12;
-    o.connect(bp); bp.connect(og); og.connect(g); o.start(tt); o.stop(tt + d + 0.05);
-  };
-  clink(t, 4200, 0.09, 0.5);
-  clink(t + 0.07, 3100, 0.12, 0.35);
-  clink(t + 0.19, 5200, 0.2, 0.3);
-  clink(t + 0.23, 3900, 0.35, 0.22);
-  const n = noiseSource(ctx, t + 0.42, 0.06);
-  const ng = ctx.createGain(); env(ng.gain, t + 0.42, 0.25, 0.002, 0.05);
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 2;
+  g.gain.value = 0.7;
+  const st = ctx.createOscillator(); st.type = 'sawtooth';
+  st.frequency.setValueAtTime(140, t); st.frequency.exponentialRampToValueAtTime(520, t + 0.42);
+  const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.frequency.setValueAtTime(600, t); sf.frequency.exponentialRampToValueAtTime(2600, t + 0.42); sf.Q.value = 4;
+  const sg = ctx.createGain(); env(sg.gain, t, 0.22, 0.01, 0.46);
+  st.connect(sf); sf.connect(sg); sg.connect(g); st.start(t); st.stop(t + 0.5);
+  for (let i = 0; i < 3; i++) {
+    const tt = t + 0.34 + i * 0.09;
+    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.setValueAtTime(95 - i * 8, tt); o.frequency.exponentialRampToValueAtTime(45, tt + 0.12);
+    const og = ctx.createGain(); env(og.gain, tt, 0.3, 0.002, 0.12);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+    o.connect(lp); lp.connect(og); og.connect(g); o.start(tt); o.stop(tt + 0.2);
+  }
+  const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(70, t + 0.6); sub.frequency.exponentialRampToValueAtTime(38, t + 1.0);
+  const subg = ctx.createGain(); env(subg.gain, t + 0.6, 0.7, 0.004, 0.55);
+  sub.connect(subg); subg.connect(g); sub.start(t + 0.6); sub.stop(t + 1.3);
+  const n = noiseSource(ctx, t + 0.6, 0.05);
+  const ng = ctx.createGain(); env(ng.gain, t + 0.6, 0.18, 0.001, 0.04);
+  const bp = ctx.createBiquadFilter(); bp.type = 'highpass'; bp.frequency.value = 3000;
   n.connect(bp); bp.connect(ng); ng.connect(g);
-  g.gain.value = 0.6;
 }
 
 export function relayClick(ctx, dest, t = ctx.currentTime) {

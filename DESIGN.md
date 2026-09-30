@@ -1,57 +1,66 @@
 ---
-name: NOISE — Select-O-Matic
-description: A browser phonk workstation rendered as a lacquered jukebox cabinet.
+name: NOISE — Midnight Countach
+description: A browser phonk workstation styled as the dash of a Lamborghini Countach under a synthwave sun.
 colors:
-  lacquer: '#0c0a09'
-  lacquer-2: '#171311'
-  panel: '#151210'
-  cream: '#f1e6c8'
-  cream-2: '#e4d7b4'
-  ink: '#1a1512'
-  strip-red: '#b52e22'
-  strip-blue: '#2d5ea8'
-  bulb: '#f0a93a'
-  bulb-dim: '#6b4a1c'
-  chrome-hi: '#fdfdfb'
-  chrome: '#b8b6ae'
-  chrome-lo: '#5f5d58'
+  night: '#0a0514'
+  night-2: '#120a24'
+  panel: '#150c2a'
+  panel-2: '#1c1038'
+  line: '#2a1d4a'
+  white: '#f4f1ff'
+  chrome-hi: '#ffffff'
+  chrome: '#dbe2f4'
+  chrome-lo: '#4a5270'
+  ink: '#1a1230'
+  mag: '#ff2bd6'
+  mag-deep: '#a5127f'
+  cyan: '#19e6ff'
+  cyan-deep: '#0d7f93'
+  sun-a: '#ffd166'
+  sun-b: '#ff2bd6'
 typography:
   display:
-    fontFamily: '"League Gothic", Impact, "Arial Narrow", sans-serif'
-    fontSize: 84px
-    fontWeight: 700
-    lineHeight: 0.86
-    letterSpacing: .02em
-  headline:
-    fontFamily: '"League Gothic", Impact, "Arial Narrow", sans-serif'
-    fontSize: 56px
+    fontFamily: 'Audiowide, "Arial Black", Impact, sans-serif'
+    fontSize: 92px
+    fontWeight: 400
     lineHeight: 1
-    letterSpacing: .12em
+    letterSpacing: .04em
+  headline:
+    fontFamily: 'Audiowide, "Arial Black", Impact, sans-serif'
+    fontSize: 40px
+    lineHeight: 1
+    letterSpacing: .04em
   title:
-    fontFamily: '"League Gothic", Impact, "Arial Narrow", sans-serif'
-    fontSize: 28px
+    fontFamily: 'Audiowide, "Arial Black", Impact, sans-serif'
+    fontSize: 26px
     lineHeight: 1
     letterSpacing: .06em
+  readout:
+    fontFamily: 'Audiowide, "Arial Black", Impact, sans-serif'
+    fontSize: 17px
+    lineHeight: 1.1
+    letterSpacing: .06em
   body:
-    fontFamily: '"Special Elite", "Courier New", monospace'
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 1.45
-  label:
-    fontFamily: '"League Gothic", Impact, "Arial Narrow", sans-serif'
+    fontFamily: 'Michroma, "Arial Narrow", sans-serif'
     fontSize: 13px
-    letterSpacing: .14em
-  strip-name:
-    fontFamily: '"Special Elite", "Courier New", monospace'
-    fontSize: 19px
-    fontWeight: 500
-    letterSpacing: .02em
+    fontWeight: 400
+    lineHeight: 1.6
+  label:
+    fontFamily: 'Michroma, "Arial Narrow", sans-serif'
+    fontSize: 11px
+    letterSpacing: .12em
+  micro-label:
+    fontFamily: 'Michroma, "Arial Narrow", sans-serif'
+    fontSize: 9px
+    letterSpacing: .2em
+  code:
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace'
+    fontSize: 12px
 rounded:
-  strip: 3px
-  pushbutton: 4px
-  well: 6px
-  device: 8px
-  coin: 12px
+  key: 4px
+  lcd: 4px
+  well: 8px
+  device: 12px
   round: 50%
 spacing:
   key-gap: 6px
@@ -59,189 +68,166 @@ spacing:
   rack-gap: 14px
   body-gap: 16px
 components:
-  pb:
+  key:
     textColor: '{colors.ink}'
-    rounded: '{rounded.pushbutton}'
-    height: 34px
-    padding: 0 14px
-  pb-small:
+    rounded: '{rounded.key}'
+    height: 30px
+    padding: 0 12px
+  key-big:
     textColor: '{colors.ink}'
-    rounded: '{rounded.pushbutton}'
-    height: 28px
-    padding: 0 11px
-  pb-tiny:
+    rounded: '{rounded.key}'
+    height: 44px
+    width: 54px
+  key-hot:
     textColor: '{colors.ink}'
-    rounded: '{rounded.pushbutton}'
-    height: 22px
-    padding: 0 8px
-  pb-big:
-    textColor: '{colors.ink}'
-    rounded: '{rounded.pushbutton}'
-    height: 46px
-    padding: '0'
-  pb-lit:
-    textColor: '{colors.ink}'
-    rounded: '{rounded.pushbutton}'
-    height: 34px
-    padding: 0 14px
+    rounded: '{rounded.key}'
+    height: 30px
+    padding: 0 12px
+  key-ghost:
+    textColor: '{colors.white}'
+    rounded: '{rounded.key}'
+    height: 30px
+    padding: 0 12px
   sel:
-    textColor: '{colors.ink}'
-    rounded: '{rounded.strip}'
+    textColor: '{colors.night}'
+    rounded: '{rounded.key}'
     width: 30px
     height: 30px
-    padding: '0'
-  title-strip:
-    backgroundColor: '{colors.cream}'
-    textColor: '{colors.ink}'
-    rounded: '{rounded.strip}'
-    padding: 5px 12px 6px 14px
+  lcd:
+    backgroundColor: '#05030c'
+    textColor: '{colors.cyan}'
+    rounded: '{rounded.lcd}'
+    padding: 6px 12px
   lanepad:
-    backgroundColor: '{colors.cream}'
-    textColor: '{colors.ink}'
-    rounded: '{rounded.strip}'
+    textColor: '{colors.white}'
+    rounded: '{rounded.key}'
     width: 132px
     height: 34px
-    padding: 0 8px 0 10px
-  strip-select:
-    backgroundColor: '{colors.cream}'
+  piano-white:
     textColor: '{colors.ink}'
-    rounded: '{rounded.strip}'
-    height: 28px
+    rounded: '0 0 4px 4px'
+  piano-black:
+    textColor: '{colors.white}'
+    rounded: '0 0 3px 3px'
   tab:
-    rounded: '{rounded.strip}'
+    rounded: '{rounded.key}'
     height: 30px
     padding: 0 14px
   device:
     rounded: '{rounded.device}'
 ---
 
-# Design System: NOISE — Select-O-Matic
+# Design System: NOISE — Midnight Countach
 
 ## Overview
 
-**Creative North Star: "The Select-O-Matic jukebox"**
+**Creative North Star: "The Countach dash at midnight"**
 
-NOISE presents its controls as a late-night jukebox cabinet: warm near-black lacquer, cream paper-like strips, red and blue rulings, chrome pushbuttons and amber indicators. Its dense hierarchy comes from physical grouping, material contrast and condensed lettering rather than spacious cards.
+NOISE presents its controls as the dashboard of a 1980s Italian supercar parked under a synthwave sun. The ground is midnight violet; the two lights are laser magenta and electric cyan; everything the hand touches is brushed chrome; everything that reads is a black LCD strip with cyan text. The hero is an in-house rendered Countach, the rack sits beside a pin-up poster, and the sun and laser grid behind the page only rise when the key is turned.
 
-The same hardware vocabulary continues through the rack, lathe and editor: recessed displays sit inside raised plates; notes and arrangement blocks repeat the cream strip treatment. This document describes the built stylesheet and JavaScript, not every proposed detail in the surface brief.
+The same vocabulary runs through the rack, the chopper, the master and the canvas editor: chrome keys and pads, recessed black displays, neon arcs on the knobs. This document describes the built stylesheet and JavaScript.
 
 **Key Characteristics:**
-- Lacquer grounds, cream strips and chrome controls.
-- Red/blue ink distinguishes strips and device content.
-- Amber feedback, mechanical reels and tactile pressed states.
-- Condensed display lettering paired with typewriter-like names and prose.
+- Midnight ground, chrome controls, black LCD readouts.
+- Magenta marks the melodic side (808, talkbox, master); cyan marks the mechanical side (drums, bells, tape, chopper).
+- Physical metaphors that carry information: ignition barrel = audio unlock, tachometer = tempo, odometer reels = bar/step, gear levers = screw/swing, cassette reels = slice player.
+- Light follows state: the sun, lasers and grid animate only while playing; lamps pulse on beats.
 
-Source of truth: `styles.css`, `index.html`, `js/app.js`, `js/editor.js` and `js/knob.js`. The shared stylesheet also supplies detached-editor and manual-page styling. Sidecar snippets are CSS/HTML visual samples; application behavior remains in JavaScript.
+Source of truth: `styles.css`, `index.html`, `js/app.js`, `js/editor.js`, `js/knob.js`. Rasters: `assets/art/` with provenance in `PROVENANCE.md` and embedded prompts.
 
 ## Colors
 
-Warm black, paper cream and silver form the material base; red and blue are printed accents and amber supplies luminous feedback. Frontmatter preserves the root color declarations without renaming them.
+### Ground
+- **night** / **night-2**: page and hero grounds. **panel** / **panel-2**: device plates and the cluster. **line**: every hairline seam and inset border.
 
-### Primary
-- **Bulb amber** (`bulb`): marquee light, live steps, knob arcs and values, focus, selection, caret and links.
-- **Dim bulb** (`bulb-dim`): idle marquee bulbs and armed lamps before playback.
+### Light
+- **mag** (laser magenta): 808/talkbox/master arcs and values, lit steps on magenta devices, playhead, wordmark glow, lever values, `is-on` keys.
+- **cyan** (electric cyan): drum/bell/tape arcs and values, LCD text, tachometer needle, the sun's lower stripes' complement, the `key--hot` primary action (SAVE JSON, LOAD TO DECK), focus outline.
+- **sun-a → sun-b**: the striped sun gradient (gold into magenta), the only warm color, and it exists only behind the page.
 
-### Secondary
-- **Strip red** (`strip-red`): upper strip rules, selected-step underlines, record labels, PREACHER scope and recording-button face.
-
-### Tertiary
-- **Strip blue** (`strip-blue`): lower strip rules, alternating device rules, field label blocks, record labels and CATHEDRAL scope.
-
-### Neutral
-- **Lacquer** (`lacquer`): cabinet and editor grounds; **panel**: canvas labels and rulers.
-- **Cream** (`cream`): title strips, note blocks, readable inserts and light text. **Ink** (`ink`): dark text on cream or chrome.
-- **Chrome high / chrome / chrome low**: highlights, metal midtone and shaded metal. The actual chrome gradient has additional fixed stops, retained in the sidecar CSS.
-- `lacquer-2` and `cream-2` are declared in the stylesheet but have no consumers in the inspected sources; they are not assigned invented roles.
+### Material
+- **chrome-hi / chrome / chrome-lo**: the brushed-chrome gradient (`--chrome-grad`) on keys, pads and piano whites. **ink**: dark text on chrome. **white**: light text on the ground.
 
 ### Named Rules
-**The Amber Light Rule.** Glowing bulbs and transport illumination use amber; red and blue remain ink and signal-trace colors. Amber also appears on static values, focus and emphasized controls, so its use is not exclusively gated by playback.
+**The Two-Light Rule.** A device is magenta or cyan, never both, declared by `.device--magenta` / `.device--cyan`; its knob arcs, values, lit steps and header underline follow. The master (EXHAUST) is magenta. Cyan alone is the reading color for LCD text regardless of device.
 
 ## Typography
 
-**Display Font:** League Gothic, with Impact, Arial Narrow and sans-serif fallbacks.
-**Body / Name Font:** Special Elite, with Courier New and monospace fallbacks.
-
-Both fonts are self-hosted WOFF2, preloaded in the document, with `font-display: swap`. The font-face declarations expose weights 400–700 and 400–500 respectively. Special Elite reads as typewriter lettering, not a conventional hand-set book serif.
+**Display: Audiowide** (wordmark, device badges, LCD titles, knob values, counter digits, lever values). **Tech: Michroma** (labels, tags, button text, body prose, ruler text in the canvas). Both are single-weight, self-hosted WOFF2 with `font-display: swap` and preloaded.
 
 ### Hierarchy
-- **Display:** individual NOISE tiles use the frontmatter display role; desktop model lettering uses the headline role.
-- **Title:** device headings use 28px; ordinary title strips use 22px, both with line-height 1. Mobile device titles use 24px.
-- **Body:** the body role is 14px / 1.45. Manual paragraphs use 14px / 1.55 and a desktop maximum width of 46ch.
-- **Names:** the song-title button uses 19px Special Elite, record names 15px and lathe names 16px.
-- **Label:** knob labels use 13px condensed lettering with .14em tracking. Strip metadata uses 12px Special Elite with .04em tracking. Control typography varies by component rather than following a mathematical scale.
-- **Numbers:** counter reels use 26px League Gothic in 34px-high cells. Counters, values, strip metadata and editor bars request tabular numerals.
+- **Display 92px** for the NOISE wordmark (72px at ≤1180, 54px at ≤820).
+- **Headline 40px** for the hero's NOW LOADED title (28px mobile). **Title 26px** for device badges (22px mobile); 30px for the manual title.
+- **Readout 17px** for LCD titles; counter reels 20px in 34px cells; knob values 13px (15px on the large V12 knobs).
+- **Body 13px / 1.6** Michroma for manual prose (max 46ch on desktop).
+- **Label 11px** for keys and tabs; 10px for LCD sublabels and pads; **micro-label 9–9.5px** with wide tracking for knob names, device tags, lever/counter captions and scope labels (decorative captions next to their large values, not primary functional text).
+- Tabular numerals on counters, values, tune readouts and the ruler.
 
 ## Layout
 
-The centered cabinet has a maximum width of 1440px and padding `0 18px 60px`. The marquee uses `auto 1fr auto` columns; the transport uses `auto auto auto 1fr`. Devices stack with a 14px rack gap. Each plate has 22px side ears, a header and a body. The body pairs a flexible face with an auto-width knob bank; header padding is `12px 14px 8px`, body padding `6px 14px 14px`. Dense control groups use recurring 4px, 6px, 8px, 10px, 12px, 14px and 16px intervals; there is no global spacing-variable scale.
+The centered dash has a maximum width of 1440px and padding `0 18px 60px`. Order: hero card (min 520px, full-bleed art, top bar and bottom tag), cluster (grid `auto auto auto minmax(0,1fr)`: ignition, gauges, levers, file strip), stage (grid `minmax(0,1fr) 320px`: rack + sticky pin-up poster), CHOP SHOP, EXHAUST, editor shell, manual.
 
-At **max-width 1180px**, device bodies and scope/key faces become one column; knobs flow horizontally, scopes become 120px high, the file strip spans the transport, and NOISE lettering drops to 64px.
+Devices are `.device` plates with a header (badge, keys, lamp) separated from the body by a hairline that takes the device's light when lit, and a body grid `minmax(0,1fr) auto` (face + knob bank). Faces stretch to the knob bank's height; the three synth faces are a `2fr 3fr` grid of scope and piano.
 
-At **max-width 820px**, cabinet padding becomes `0 10px 40px`; marquee and transport stack while navigation remains two columns. NOISE drops to 54px, model lettering to 28px. Device ears shrink to 10px and screws disappear. File keys use four columns. Small/tiny/big pushbuttons become 40px/34px/52px high (editor small buttons have a 36px override). The step grid keeps 16 columns and scrolls sideways with fixed lane labels, 40px steps and scroll nudges. Musical keys wrap into six 44px columns; slice keys become 48px by 44px. Glass is 160px high, waveform 130px; the manual becomes one column.
+At **≤1180px**: bodies become one column, knob banks flow horizontally, the poster drops below the rack (max 420px), the wordmark is 72px, the file strip spans the cluster.
 
-The docked editor is 460px high on desktop; mobile uses auto height with a 460px minimum canvas wrapper. Detached editor styling uses a full-viewport height and square corners. Independently of CSS breakpoints, editor canvas geometry switches to touch dimensions for a coarse pointer or canvas width below 700px. It draws its own scrollbars and preserves minimum cell sizes instead of squeezing all steps into view.
+At **≤820px**: dash padding `0 10px 40px`; the hero nav is a 4-up equal grid; the cluster stacks (ignition beside a 2×2 of transport keys, tach centered, three odometers in a row, two levers); keys are 44px high; device knob banks become an `auto-fit minmax(64px,1fr)` grid; the step grid keeps 16 columns and scrolls sideways beside fixed lane pads; pianos span full width; slice pads are a 4×2 grid; the chopper's controls stack; the manual is one column.
+
+The docked editor is 460px high on desktop, auto with a 460px canvas minimum on mobile; detached it fills the viewport. Canvas geometry switches to touch dimensions on coarse pointers or below 700px.
 
 ## Elevation & Depth
 
-Depth is structural: multiple inset highlights and lower edges make keys protrude; dark inset shadows recess counters, sliders, scopes and glass. Device plates use a thin inset seam and diffuse downward shadow. This is not a flat system. Chrome uses a multi-stop vertical gradient, not a solid silver swatch. Glass has a diagonal translucent reflection and a chrome lower rail.
-
-### Shadow Vocabulary
-- **Strip:** `var(--strip-shadow)` combines a white inner upper edge, dark inner lower edge and a one-pixel outer seam.
-- **Pushbutton:** a white inner highlight, dark inner bottom, three-pixel base and short diffuse shadow; pressing shifts it down 2px and shortens the base.
-- **Device:** inset seam and subtle upper highlight, plus `0 14px 30px -18px #000`.
-- **Display well:** a two-pixel inset rim and a broad black inset shadow.
-- **Lamp:** concentric dark rims, with amber bloom when armed and playing; beat pulses use a pale warm core.
-
-Exact shadow declarations and complete sampled component CSS are in the sidecar.
+Depth is structural. Keys and pads protrude via `--key-shadow` (white inner top edge, chrome-lo inner bottom edge, 3px base, short diffuse shadow) and press down 2px. LCDs, scopes, the tape window and the waveform recess with inset hairlines and broad black inset shadows; LCDs carry a faint scanline overlay. Devices and the cluster float on `0 16px 40px -22px #000`. Neon is applied as `--neon-mag` / `--neon-cyan` text and box shadows on the wordmark, badges, values, lit steps and the hero lasers.
 
 ## Shapes
 
-Small rectangular inserts dominate: strips, tabs and selectors have 3px corners; pushbuttons and counter housings 4px; display wells and knob banks 6px; plates and the editor 8px. The coin button is a 108px square with 12px corners. Knobs, lamps and screw heads are circular. Carousel glass has `10px 10px 4px 4px` corners. Native vertical sliders sit in narrow pill-shaped black wells. These shapes coexist; a single universal radius would not describe the build.
+Keys, pads, LCDs and tabs use 4px corners; knob banks and wells 8px; devices, the cluster, the hero and the editor 12px. Piano whites are square-topped with 4px bottom corners; blacks float over the seams at 62% width and 58% height. Knobs, lamps, the ignition barrel and reel hubs are circular. The tachometer is a half-disc SVG.
 
 ## Components
 
-### Chrome pushbuttons
-The raised chrome button (`.pb`) is 34px high with `0 14px` padding, 15px condensed lettering and .1em tracking. Small, tiny and big variants change dimensions; the big variant is 56px wide. Hover brightens to 1.06. Active and `is-on` translate down 2px; `is-on` also switches to amber. The `--lit` variant is a permanently warm emphasis face, not a playback state. Disabled buttons have .55 opacity and a progress cursor. Global keyboard focus is a 2px amber outline with 2px offset.
+### Keys
+`.key` is the chrome button: 30px high, Michroma 11px with .12em tracking, ink text. `--big` is 44×54 for transport; `--hot` is the cyan primary; `--ghost` is a translucent dark pill for hero navigation; `.is-on` turns magenta with a glow (Play, Mute, Loop). Focus is a 2px cyan outline.
 
-### Title strips and lane pads
-Cream title strips have red upper and blue lower 2px rules, reversed under blue devices. Names and metadata truncate unless the info-strip variant allows metadata wrapping. The song name is a button that invokes a native rename prompt and underlines red on hover. Lane pads use the same ruled insert as an audition button; hit/active states shift down 1px and become amber. Lane tuning is displayed separately.
+### Ignition
+An SVG barrel with OFF / ACC / ON / START positions and a chrome key that rotates from −60° to +60° when `.is-on`. Idle, the barrel pulses a cyan drop-shadow; on, it glows magenta. Clicking it unlocks audio, plays the ignition sound (starter whine, engine catch, sub thump) and starts the song.
 
-### Selector keys
-Chrome letter/number keys (`.sel`) are 30px square at base; selected steps become cream with a red underline, while `is-now` marks the sounding column in amber. Active/`is-hit` shifts down 2px. Selected-plus-current has a lighter warm face. Slice keys are 44px by 36px. The final desktop musical-key rule overrides the earlier declaration: width 36px, auto height, minimum 48px, 12px text and 6px bottom padding. Black keys have their own dark gradient. Selected content and transport position are distinct states.
+### Gauges
+The tachometer maps 60–200 BPM onto a 180° needle with a magenta redline above 172. Odometers (`.counter`) are Audiowide digit reels in black drums, rolling with `--roll` speed (BAR .16s, STEP .05s). Levers are native vertical ranges with chrome thumbs in pill wells; values below in magenta.
 
-### Knobs, counters and levers
-The rotary knob has an SVG chrome rim and dark cap, cream pointer and amber arc. Its focusable cap exposes ARIA slider minimum, maximum, current value and formatted value text. Vertical dragging changes value, Shift refines drag, wheel adjusts, arrow keys step, Home/End reach bounds and double-click resets. Default cap size is 58px; special three-knob banks use 76px until the intermediate breakpoint. Mobile defaults use 64px, but the more-specific three-knob-bank rule retains 58px.
+### LCD strips
+`.lcd` is the reading surface: black gradient, inset hairline, scanline overlay, Audiowide cyan title, Michroma dim sublabel. Used for the song title (a rename button), the tape name, the chopper readout and the master info strip.
 
-Mechanical counters contain clipped 24px-by-34px drums and translated digit reels. Default roll is .28s with `cubic-bezier(.2,.8,.2,1)`; BAR uses .16s and STEP .05s. Counter status labels update without live announcements. Vertical native ranges use chrome thumbs; labels sit above and amber values below.
+### V12 step grid
+Lane pads (`.lanepad`) are dark inset buttons with the lane name and tune readout; pressing auditions the lane. Step pads (`.sel`) are 30px chrome squares numbered 1–16 in groups of four; `.is-on` lights cyan, `.is-now` (the sounding column) turns white with a cyan inset ring, both together glow. Pages (BAR 1 / BAR 2) switch which bar of a longer pattern is shown.
 
-### Device plates and displays
-Device plates (`.device`) frame their content with shaded side ears and slotted screw pseudo-elements. Armed lamps are dim until playback, then glow amber and briefly brighten on beats. Carousel glass contains canvas-drawn records, carriage and tone arm. Scopes use recessed gridded wells. The VU is a cream 240px-by-96px meter with a red needle and chrome pivot; its transform transition is .08s linear.
+### Pianos
+`.piano` lays white keys in a `repeat(var(--nw), 1fr)` grid and floats black keys absolutely over the seams via `--i`. Pressing lights the key in the device's color. Pianos audition only; notes are written in the editor.
 
-### Navigation, fields and editor controls
-Cabinet links are cream inserts with red/blue code blocks, 36px high on desktop and 44px on mobile; hover brightens them. Editor tabs switch from dark recessed faces to cream when selected and update `aria-selected`. Pattern strip buttons change chrome to cream and add a red underline; ghost add/remove buttons are dark. Strip-select fields combine a blue condensed label block with a cream native select. Their desktop height is 28px, mobile 36px. No custom text-input skin or chip component is present in these sources.
+### Tape deck
+A canvas cassette window: slice segments across the top (the firing slice lights magenta), two reels whose fill moves as the tape plays, a cyan counter, and a tape path with a head that lights on a hit. Below: the tape LCD and 8 chrome slice pads (shift-click for reverse).
 
-### Canvas surfaces
-Editor notes are cream strips with red/blue velocity marks; sounding notes and playheads use amber, selected notes receive amber outlines. Song blocks repeat red/blue top/bottom rules. Editor and lathe read core colors from root variables, but cache or supplement them with fixed values. Scopes read amber/red/blue variables. Carousel drawing uses hard-coded matching colors and additional metal shades, not live-bound root variables. Lathe alternating translucent bands also use fixed RGBA values, including a red that differs from `strip-red`.
+### Chop shop
+A waveform well with magenta cut lines and alternating magenta/cyan slice tags; click adds a cut, drag moves one, double-click removes one. Controls: CUT BY transients/4/8/16/32, sensitivity, NORMALIZE, LOAD TO DECK (hot), EXPORT SLICES.
 
-### Feedback and state grammar
-Toast messages are fixed cream strips with blue/red rules, a polite live region and a .25s slide/fade; warnings use red on both rules. `body.is-dropping` displays the full-screen dark drop overlay with a dashed amber border.
+### Exhaust
+Five master knobs, a 24-segment LED meter (cyan, magenta above 16, white above 20) and the info LCD.
 
-`body.is-lit` is set after audio unlock (coin or an audition that calls the same gate), brightening marquee tiles and bulbs. `body.is-playing` enables the 1.2s stepped bulb chase and armed lamps; audio RMS modulates cabinet glow. Stopping leaves the unlocked cabinet lit. `body.is-recording` makes the microphone button red with a one-second stepped brightness pulse; it does not produce the brief's proposed red/blue cabinet lighting. `body.is-detached` hides the docked editor and reveals its return placeholder.
+### Editor canvas
+Notes are chrome cells with a velocity mark; the sounding note and the playhead are magenta; the playhead column carries a magenta wash; selection outlines are magenta. Row labels are chrome chips with a cyan mark; the corner chip carries device and pattern name in ink on the device color. Song blocks repeat the chrome treatment.
 
-The idle coin beckons with a 2.2s brightness pulse. `prefers-reduced-motion: reduce` disables marquee chase, coin beckon, reel transition and recording pulse. It does not disable all transitions, JavaScript canvas animation, smooth scrolling or beat flashes. These limits are recorded, not promoted into accessibility guarantees.
+### Feedback
+Toasts are panel-colored strips with a cyan inset border (magenta for warnings). `body.is-lit` raises the sun and lasers; `body.is-playing` runs the grid, sweeps the lasers, pulses the poster frame and arms the lamps; `body.is-recording` turns RECORD MIC red; `body.is-detached` swaps the docked editor for its return placeholder. `prefers-reduced-motion` stops the grid, lasers, frame pulse, ignition pulse, reel transitions and the recording blink.
 
 ## Do's and Don'ts
 
 ### Do:
-- Do preserve the cream-strip, ink-text and red/blue ruling combination.
-- Do retain amber focus outlines and textual control values alongside visual feedback.
-- Do keep horizontal step scrolling and the larger mobile control variants.
-- Do distinguish selected content from the currently sounding step.
+- Keep the two-light rule: a device is magenta or cyan, and its arcs, values and lit steps agree.
+- Keep chrome for touchable things and black LCD for readable things.
+- Keep the physical metaphors informative (the tach shows tempo, the reels move with the tape); no decorative gauges.
+- Keep the song-file device ids (`breaker`, `hearse`, `cathedral`, `preacher`, `carousel`) even though the visible names changed.
 
 ### Don't:
-- Don't treat strip-red and strip-blue as interchangeable with amber transport glow.
-- Don't replace the built chrome gradients and recessed wells with flat generic cards.
-- Don't claim every amber element is playback-gated or every animation is disabled by reduced motion.
-- Don't claim all canvas colors are live-bound CSS variables.
-
-Not canonized or repaired: the DETACH control's arrow glyph is an incumbent detail, not an icon-system rule. Hard-coded canvas colors and partial reduced-motion coverage remain implementation limitations. No new palette shades, font-license assertions or unimplemented lighting states are inferred from the brief.
+- Don't add a third accent hue; the sun's gold lives behind the page only.
+- Don't put glow on body prose or labels; glow belongs to wordmark, badges, values and lit controls.
+- Don't flatten the chrome into solid silver or the LCDs into plain dark cards.
+- Don't reintroduce side stripes or eyebrow labels above titles.

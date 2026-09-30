@@ -1,4 +1,4 @@
-// NOISE — main window. Builds the cabinet, wires the engine, hosts (or detaches) the editor.
+// NOISE — main window. Builds the dash, wires the engine, hosts (or detaches) the editor.
 import { Engine, detectSlices, sliceEven, normalizeBuffer, trimBuffer, peaks } from './engine.js';
 import { demoSong, emptySong, validateSong, DEVICE_TYPES, MASTER_PARAMS, History, findDevice, findPattern, STEPS_PER_BAR } from './song.js';
 import { applyOp } from './ops.js';
@@ -43,33 +43,94 @@ class App {
     this.editor = new Editor(this.editorRoot, this.editorBus);
     $('#song-title').textContent = this.song.title;
     this.setLit(false);
+    this.placePlate();
+    window.addEventListener('resize', () => this.placePlate());
+  }
+
+  // The hero art carries a generated plate with gibberish on it; the PHONK plate covers it exactly.
+  // Source plate box (incl. the two badges beside it) in the 1216x832 render: x 254-424, y 421-462.
+  placePlate() {
+    const img = $('.hero__art img'), plate = $('.hero__plate'), hero = $('.hero');
+    if (!img || !plate || !hero) return;
+    const hw = hero.clientWidth, hh = hero.clientHeight;
+    const iw = 1216, ih = 832;
+    const scale = Math.max(hw / iw, hh / ih);            // object-fit: cover
+    const dw = iw * scale, dh = ih * scale;
+    const ox = (hw - dw) * 0.5, oy = (hh - dh) * 0.62;   // object-position: 50% 62%
+    const cx = ox + 339 * scale, cy = oy + 441.5 * scale;
+    const w = 176 * scale;
+    plate.style.setProperty('--plate-x', (cx / hw * 100).toFixed(2) + '%');
+    plate.style.setProperty('--plate-y', (cy / hh * 100).toFixed(2) + '%');
+    plate.style.setProperty('--plate-w', (w / hw * 100).toFixed(2) + '%');
   }
 
   renderTransport() {
     const t = $('#transport');
     t.innerHTML = '';
-    // coin panel
-    const coin = el('div', 'coin');
-    coin.innerHTML = `
-      <button class="coin__slot" id="coin" aria-label="Insert coin: switch the cabinet on and play">
-        <span class="coin__mouth"></span>
-        <span class="coin__text">INSERT<br>COIN</span>
+    // ignition + transport keys
+    const ign = el('div', 'ignition');
+    ign.innerHTML = `
+      <button class="ignition__key" id="coin" aria-label="Turn the key: switch the dash on and play">
+        <svg class="ignition__barrel" viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="56" fill="#0a0514"/>
+          <circle cx="60" cy="60" r="50" fill="none" stroke="url(#kchrome)" stroke-width="5"/>
+          <circle cx="60" cy="60" r="44" fill="#150c2a"/>
+          <g class="ignition__pos" font-family="Michroma, sans-serif" font-size="8.5" fill="#dbe2f4" text-anchor="middle">
+            <text x="28" y="42">OFF</text><text x="60" y="27">ACC</text><text x="93" y="42">ON</text><text x="60" y="104" class="ignition__start">START</text>
+          </g>
+          <g class="ignition__blade">
+            <rect x="53" y="40" width="14" height="46" rx="3" fill="#05030c"/>
+            <rect x="57" y="44" width="6" height="40" rx="2" fill="url(#kchrome)"/>
+            <circle cx="60" cy="46" r="9" fill="none" stroke="url(#kchrome)" stroke-width="4"/>
+            <rect x="63" y="70" width="5" height="4" rx="1" fill="url(#kchrome)"/><rect x="63" y="77" width="4" height="4" rx="1" fill="url(#kchrome)"/>
+          </g>
+        </svg>
+        <span class="ignition__text">TURN KEY</span>
       </button>
-      <div class="coin__keys">
-        <button class="pb pb--big" id="play" aria-label="Play" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg></button>
-        <button class="pb pb--big" id="stop" aria-label="Stop"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/></svg></button>
-        <button class="pb pb--big" id="rewind" aria-label="Return to start"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 5h2v14H6zM19 5v14L9 12z" fill="currentColor"/></svg></button>
-        <button class="pb pb--big" id="loop" aria-label="Loop the selection" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M17 7H7a4 4 0 0 0 0 8h1v-2H7a2 2 0 1 1 0-4h10v3l4-4-4-4zM7 17h10a4 4 0 0 0 0-8h-1v2h1a2 2 0 1 1 0 4H7v-3l-4 4 4 4z" fill="currentColor"/></svg></button>
+      <div class="ignition__keys">
+        <button class="key key--big" id="play" aria-label="Play" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg></button>
+        <button class="key key--big" id="stop" aria-label="Stop"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor"/></svg></button>
+        <button class="key key--big" id="rewind" aria-label="Return to start"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 5h2v14H6zM19 5v14L9 12z" fill="currentColor"/></svg></button>
+        <button class="key key--big" id="loop" aria-label="Loop the selection" aria-pressed="false"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M17 7H7a4 4 0 0 0 0 8h1v-2H7a2 2 0 1 1 0-4h10v3l4-4-4-4zM7 17h10a4 4 0 0 0 0-8h-1v2h1a2 2 0 1 1 0 4H7v-3l-4 4 4 4z" fill="currentColor"/></svg></button>
       </div>`;
-    t.appendChild(coin);
-    // counters
-    const counters = el('div', 'counters');
+    t.appendChild(ign);
+    // tachometer: BPM as RPM
+    const gauges = el('div', 'gauges');
+    gauges.innerHTML = `
+      <div class="tach" aria-hidden="true">
+        <svg viewBox="0 0 200 130">
+          <path class="tach__arc" d="M 20 110 A 80 80 0 0 1 180 110" fill="none" stroke="#2a1d4a" stroke-width="6"/>
+          <path class="tach__hot" d="M 152 51 A 80 80 0 0 1 180 110" fill="none" stroke="#ff2bd6" stroke-width="6" opacity=".9"/>
+          <g class="tach__ticks"></g>
+          <g class="tach__needle" transform="rotate(-90 100 110)"><path d="M 100 110 L 100 38" stroke="#19e6ff" stroke-width="3" stroke-linecap="round"/><circle cx="100" cy="110" r="7" fill="#dbe2f4"/></g>
+          <text x="100" y="126" text-anchor="middle" class="tach__lbl">TEMPO</text>
+        </svg>
+      </div>
+      <div class="odometers"></div>`;
+    t.appendChild(gauges);
+    const ticks = $('.tach__ticks', gauges);
+    for (let i = 0; i <= 10; i++) {
+      const a = (-90 + i * 18) * Math.PI / 180;
+      const r0 = 80, r1 = i % 2 ? 72 : 66;
+      const x0 = 100 + Math.sin(a) * r0, y0 = 110 - Math.cos(a) * r0, x1 = 100 + Math.sin(a) * r1, y1 = 110 - Math.cos(a) * r1;
+      const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      l.setAttribute('x1', x0); l.setAttribute('y1', y0); l.setAttribute('x2', x1); l.setAttribute('y2', y1);
+      l.setAttribute('stroke', i >= 8 ? '#ff2bd6' : '#dbe2f4'); l.setAttribute('stroke-width', i % 2 ? 1 : 2);
+      ticks.appendChild(l);
+      if (i === 0 || i === 2 || i === 5 || i === 8 || i === 10) {
+        const tx = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        tx.setAttribute('x', 100 + Math.sin(a) * 52); tx.setAttribute('y', 110 - Math.cos(a) * 52 + 4); tx.setAttribute('text-anchor', 'middle'); tx.setAttribute('class', 'tach__num');
+        tx.textContent = 60 + i * 14;
+        ticks.appendChild(tx);
+      }
+    }
+    this.tachNeedle = $('.tach__needle', gauges);
+    const odos = $('.odometers', gauges);
     this.cBpm = new Counter('BPM', 3, { onStep: (d) => this.commit({ type: 'setBpm', bpm: this.song.bpm + d }, true) });
     this.cBar = new Counter('BAR', 3, { speed: '.16s' });
     this.cStep = new Counter('STEP', 2, { speed: '.05s' });
-    counters.append(this.cBpm.el, this.cBar.el, this.cStep.el);
-    t.appendChild(counters);
-    // swing + screw lever
+    odos.append(this.cBpm.el, this.cBar.el, this.cStep.el);
+    // screw + swing levers (gear-shift style)
     const levers = el('div', 'levers');
     levers.innerHTML = `
       <div class="lever" id="screw">
@@ -79,25 +140,25 @@ class App {
       </div>
       <div class="lever">
         <div class="lever__label">SWING</div>
-        <div class="lever__track"><input type="range" min="0" max="0.5" step="0.01" value="0.08" id="swing" aria-label="Swing" orient="vertical"></div>
-        <div class="lever__val" id="swing-val">8%</div>
+        <div class="lever__track"><input type="range" min="0" max="0.5" step="0.01" value="0.04" id="swing" aria-label="Swing" orient="vertical"></div>
+        <div class="lever__val" id="swing-val">4%</div>
       </div>`;
     t.appendChild(levers);
-    // file strip
+    // deck: title + file keys
     const file = el('div', 'filestrip');
     file.innerHTML = `
-      <div class="title-strip title-strip--song">
-        <button class="title-strip__name" id="song-title" title="Rename song"></button>
-        <span class="title-strip__lbl">NOW PLAYING · PRESS THE TITLE TO RENAME</span>
+      <div class="lcd lcd--song">
+        <button class="lcd__title" id="song-title" title="Rename song"></button>
+        <span class="lcd__lbl">NOW LOADED · PRESS THE TITLE TO RENAME</span>
       </div>
       <div class="filestrip__keys">
-        <button class="pb pb--small" id="new">NEW</button>
-        <button class="pb pb--small" id="open">OPEN</button>
-        <button class="pb pb--small pb--lit" id="save">SAVE JSON</button>
-        <button class="pb pb--small" id="export">WAV</button>
-        <button class="pb pb--small" id="undo" title="Undo (Ctrl+Z)">UNDO</button>
-        <button class="pb pb--small" id="redo" title="Redo (Ctrl+Shift+Z)">REDO</button>
-        <button class="pb pb--small" id="demo" title="Reload the built-in demo song">DEMO</button>
+        <button class="key" id="new">NEW</button>
+        <button class="key" id="open">OPEN</button>
+        <button class="key key--hot" id="save">SAVE JSON</button>
+        <button class="key" id="export">WAV</button>
+        <button class="key" id="undo" title="Undo (Ctrl+Z)">UNDO</button>
+        <button class="key" id="redo" title="Redo (Ctrl+Shift+Z)">REDO</button>
+        <button class="key" id="demo" title="Reload the built-in demo song">DEMO</button>
       </div>
       <input type="file" id="file-input" accept=".json,application/json" hidden>`;
     t.appendChild(file);
@@ -115,15 +176,14 @@ class App {
     d.dataset.device = dev.id;
     d.setAttribute('aria-label', T.name);
     d.innerHTML = `
-      <div class="device__ear device__ear--l"></div>
       <header class="device__head">
-        <div class="title-strip">
-          <span class="title-strip__name">${T.name}</span>
-          <span class="title-strip__lbl">${T.tag}</span>
+        <div class="badge">
+          <span class="badge__name">${T.name}</span>
+          <span class="badge__tag">${T.tag}</span>
         </div>
         <div class="device__keys">
-          <button class="pb pb--small js-edit" title="Open in the editor">EDIT</button>
-          <button class="pb pb--small js-mute ${dev.muted ? 'is-on' : ''}" aria-pressed="${!!dev.muted}" title="Mute">MUTE</button>
+          <button class="key js-edit" title="Open in the editor">EDIT</button>
+          <button class="key js-mute ${dev.muted ? 'is-on' : ''}" aria-pressed="${!!dev.muted}" title="Mute">MUTE</button>
         </div>
         <div class="lamp ${dev.muted ? '' : 'is-armed'}" aria-hidden="true"></div>
       </header>
@@ -131,7 +191,7 @@ class App {
         <div class="device__face"></div>
         <div class="device__knobs"></div>
       </div>
-      <div class="device__ear device__ear--r"></div>`;
+      <div class="device__screws" aria-hidden="true"></div>`;
     const knobs = $('.device__knobs', d);
     knobs.dataset.count = T.params.length;
     for (const p of T.params) {
@@ -155,7 +215,7 @@ class App {
   // --- faces: the part of each device that is not knobs ---
   faceBreaker(face, dev) {
     face.classList.add('face-breaker');
-    // The jukebox selector as a step grid: each lane's title strip is also its pad (press to hit),
+    // The V12 step grid: each lane's name pad is also its trigger (press to hit),
     // followed by 16 chrome letter/number pushbuttons. Pages step through longer patterns.
     const sel = el('div', 'selector');
     sel.setAttribute('role', 'grid');
@@ -212,13 +272,12 @@ class App {
       const cells = Array.from({ length: 16 }, (_, k) => {
         const s = off + k;
         const on = pat?.notes.some((n) => n.n === lane && n.s === s);
-        const letter = k < 8 ? String.fromCharCode(65 + k) : String(k - 7);
-        return `<button class="sel ${on ? 'is-on' : ''} ${k % 4 === 0 ? 'sel--beat' : ''}" role="gridcell" data-lane="${lane}" data-step="${s}" data-col="${k}" aria-label="${name} step ${s + 1}" aria-pressed="${!!on}"><span>${letter}</span></button>`;
+        return `<button class="sel ${on ? 'is-on' : ''} ${k % 4 === 0 ? 'sel--beat' : ''}" role="gridcell" data-lane="${lane}" data-step="${s}" data-col="${k}" aria-label="${name} step ${s + 1}" aria-pressed="${!!on}"><span>${k % 4 === 0 ? k + 1 : ''}</span></button>`;
       }).join('');
       return `<div class="selector__row" role="row">${cells}</div>`;
     }).join('');
-    const pageHtml = pages > 1 ? `<div class="selector__pages" role="tablist" aria-label="Pattern page">${Array.from({ length: pages }, (_, p) => `<button class="selector__page ${p === this.selPage ? 'is-on' : ''}" role="tab" data-page="${p}" aria-selected="${p === this.selPage}">BAR ${p + 1}</button>`).join('')}<span class="selector__pat">${pat?.name || 'A'} · ${pat?.steps || 16} STEPS · PRESS A NAME TO HIT IT · RIGHT-CLICK TO TUNE</span></div>` : `<div class="selector__pages"><span class="selector__pat">${pat?.name || 'A'} · ${pat?.steps || 16} STEPS · PRESS A NAME TO HIT IT · RIGHT-CLICK TO TUNE</span></div>`;
-    const nudge = `<span class="selector__nudge"><button class="pb pb--small js-nudge" data-dir="-1" aria-label="Scroll steps left"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button class="pb pb--small js-nudge" data-dir="1" aria-label="Scroll steps right"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>`;
+    const pageHtml = pages > 1 ? `<div class="selector__pages" role="tablist" aria-label="Pattern page">${Array.from({ length: pages }, (_, p) => `<button class="selector__page ${p === this.selPage ? 'is-on' : ''}" role="tab" data-page="${p}" aria-selected="${p === this.selPage}">BAR ${p + 1}</button>`).join('')}<span class="selector__pat">${pat?.name || 'A'} · ${pat?.steps || 16} STEPS · TAP A LANE NAME TO HIT IT · RIGHT-CLICK TO TUNE</span></div>` : `<div class="selector__pages"><span class="selector__pat">${pat?.name || 'A'} · ${pat?.steps || 16} STEPS · TAP A LANE NAME TO HIT IT · RIGHT-CLICK TO TUNE</span></div>`;
+    const nudge = `<span class="selector__nudge"><button class="key js-nudge" data-dir="-1" aria-label="Scroll steps left"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button class="key js-nudge" data-dir="1" aria-label="Scroll steps right"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>`;
     sel.innerHTML = `<div class="selector__lanes" role="rowgroup">${laneHtml}</div><div class="selector__scroll" role="rowgroup">${rowsHtml}</div>` + pageHtml.replace('</div>', nudge + '</div>');
     return;
     sel.innerHTML = rowsHtml + pageHtml;
@@ -229,16 +288,16 @@ class App {
   }
 
   faceCarousel(face, dev) {
-    face.classList.add('face-carousel');
+    face.classList.add('face-deck');
     face.innerHTML = `
-      <div class="glass">
-        <canvas class="carousel-canvas" aria-hidden="true"></canvas>
+      <div class="deck">
+        <canvas class="deck-canvas" aria-hidden="true"></canvas>
       </div>
-      <div class="carousel__row">
-        <div class="record-strip title-strip"><span class="title-strip__name js-sample-name">—</span><span class="title-strip__lbl js-sample-meta">no record</span></div>
+      <div class="deck__row">
+        <div class="lcd lcd--tape"><span class="lcd__title js-sample-name">—</span><span class="lcd__lbl js-sample-meta">no tape</span></div>
         <div class="slice-keys" role="group" aria-label="Slice pads"></div>
       </div>`;
-    this.carouselCanvas = $('.carousel-canvas', face);
+    this.carouselCanvas = $('.deck-canvas', face);
     this.sliceKeys = $('.slice-keys', face);
     this.sampleName = $('.js-sample-name', face);
     this.sampleMeta = $('.js-sample-meta', face);
@@ -257,23 +316,39 @@ class App {
     const n = dev.audio?.slices?.length || 0;
     this.sliceKeys.innerHTML = Array.from({ length: n }, (_, i) => `<button class="sel sel--slice" data-slice="${i}" aria-label="Play slice ${i + 1} (shift: reversed)"><span>${String(i + 1).padStart(2, '0')}</span></button>`).join('');
     this.sampleName.textContent = dev.audio?.name || '—';
-    this.sampleMeta.textContent = dev.audio ? `${n} SLICES · ${dev.audio.buffer ? dev.audio.buffer.duration.toFixed(2) + 's' : ''} · ${dev.audio.origin === 'baked' ? 'RESAMPLED IN-HOUSE' : dev.audio.origin === 'lathe' ? 'CUT ON THE LATHE' : 'YOUR RECORD'}` : 'no record';
+    this.sampleMeta.textContent = dev.audio ? `${n} SLICES · ${dev.audio.buffer ? dev.audio.buffer.duration.toFixed(2) + 's' : ''} · ${dev.audio.origin === 'baked' ? 'DUBBED IN-HOUSE' : dev.audio.origin === 'lathe' ? 'CUT IN THE CHOP SHOP' : 'YOUR TAPE'}` : 'no tape';
     this.carouselDirty = true;
+  }
+
+
+  // A real two-octave piano: white keys in a row, black keys floating over the seams.
+  buildPiano(container, lo, hi, verb) {
+    container.classList.add('piano');
+    const BLACK = [1, 3, 6, 8, 10];
+    const whites = []; for (let m = lo; m <= hi; m++) if (!BLACK.includes(m % 12)) whites.push(m);
+    container.style.setProperty('--nw', whites.length);
+    const frag = document.createDocumentFragment();
+    let wi = 0;
+    for (let m = lo; m <= hi; m++) {
+      const black = BLACK.includes(m % 12);
+      const b = el('button', `pk ${black ? 'pk--black' : 'pk--white'}`, `<span>${black ? noteName(m).replace(/-?\d+$/, '') : noteName(m)}</span>`);
+      b.setAttribute('aria-label', `${verb} ${noteName(m)}`);
+      b.title = noteName(m);
+      b.dataset.midi = m;
+      if (black) b.style.setProperty('--i', wi - 1); else { b.style.setProperty('--i', wi); wi++; }
+      frag.appendChild(b);
+    }
+    container.appendChild(frag);
   }
 
   faceHearse(face, dev) {
     face.classList.add('face-hearse');
-    face.innerHTML = `<div class="scope"><canvas aria-hidden="true"></canvas><div class="scope__lbl">SUB · <span class="js-note">—</span></div></div>
+    face.innerHTML = `<div class="scope"><canvas aria-hidden="true"></canvas><div class="scope__lbl">808 · <span class="js-note">—</span></div></div>
       <div class="hearse-keys" role="group" aria-label="808 keys"></div>`;
     this.hearseScope = $('canvas', face);
     this.hearseNote = $('.js-note', face);
     const keys = $('.hearse-keys', face);
-    for (let m = 24; m <= 47; m++) {
-      const b = el('button', `sel sel--key ${[1, 3, 6, 8, 10].includes(m % 12) ? 'sel--black' : ''}`, `<span>${noteName(m)}</span>`);
-      b.setAttribute('aria-label', `Play ${noteName(m)}`);
-      b.dataset.midi = m;
-      keys.appendChild(b);
-    }
+    this.buildPiano(keys, 24, 47, 'Play');
     keys.addEventListener('pointerdown', (e) => {
       const b = e.target.closest('button'); if (!b) return; e.preventDefault();
       this.ensureAudio().then(() => { this.engine.audition(dev.id, +b.dataset.midi, { len: 4, g: e.shiftKey }); this.flash(b); this.hearseNote.textContent = noteName(+b.dataset.midi); });
@@ -282,33 +357,23 @@ class App {
   }
   faceCathedral(face, dev) {
     face.classList.add('face-cathedral');
-    face.innerHTML = `<div class="nave"><canvas aria-hidden="true"></canvas><div class="scope__lbl">NAVE · BELLS RUNG <span class="js-count">0000</span></div></div>
+    face.innerHTML = `<div class="nave"><canvas aria-hidden="true"></canvas><div class="scope__lbl">LASERS FIRED <span class="js-count">0000</span></div></div>
       <div class="bell-keys" role="group" aria-label="Cowbell keys"></div>`;
     this.naveCanvas = $('canvas', face);
     this.bellCount = $('.js-count', face);
     const keys = $('.bell-keys', face);
-    for (let m = 60; m <= 83; m++) {
-      const b = el('button', `sel sel--key ${[1, 3, 6, 8, 10].includes(m % 12) ? 'sel--black' : ''}`, `<span>${noteName(m)}</span>`);
-      b.setAttribute('aria-label', `Ring ${noteName(m)}`);
-      b.dataset.midi = m;
-      keys.appendChild(b);
-    }
+    this.buildPiano(keys, 60, 83, 'Ring');
     keys.addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); this.ensureAudio().then(() => { this.engine.audition(dev.id, +b.dataset.midi, { len: 1 }); this.flash(b); }); });
     keys.addEventListener('keydown', (e) => { const b = e.target.closest('button'); if (b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); this.ensureAudio().then(() => this.engine.audition(dev.id, +b.dataset.midi, { len: 1 })); } });
   }
   facePreacher(face, dev) {
     face.classList.add('face-preacher');
-    face.innerHTML = `<div class="mouth"><canvas aria-hidden="true"></canvas><div class="scope__lbl">VOWEL · <span class="js-vowel">EH</span></div></div>
+    face.innerHTML = `<div class="mouth"><canvas aria-hidden="true"></canvas><div class="scope__lbl">MOUTH · <span class="js-vowel">EH</span></div></div>
       <div class="preach-keys" role="group" aria-label="Preacher keys"></div>`;
     this.mouthCanvas = $('canvas', face);
     this.vowelLbl = $('.js-vowel', face);
     const keys = $('.preach-keys', face);
-    for (let m = 40; m <= 63; m++) {
-      const b = el('button', `sel sel--key ${[1, 3, 6, 8, 10].includes(m % 12) ? 'sel--black' : ''}`, `<span>${noteName(m)}</span>`);
-      b.setAttribute('aria-label', `Preach ${noteName(m)}`);
-      b.dataset.midi = m;
-      keys.appendChild(b);
-    }
+    this.buildPiano(keys, 40, 63, 'Chant');
     keys.addEventListener('pointerdown', (e) => { const b = e.target.closest('button'); if (!b) return; e.preventDefault(); this.ensureAudio().then(() => { this.engine.audition(dev.id, +b.dataset.midi, { len: 3 }); this.flash(b); }); });
     keys.addEventListener('keydown', (e) => { const b = e.target.closest('button'); if (b && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); this.ensureAudio().then(() => this.engine.audition(dev.id, +b.dataset.midi, { len: 3 })); } });
   }
@@ -316,13 +381,12 @@ class App {
   renderLathe() {
     const l = $('#lathe');
     l.innerHTML = `
-      <div class="device__ear device__ear--l"></div>
       <header class="device__head">
-        <div class="title-strip"><span class="title-strip__name">LATHE</span><span class="title-strip__lbl">CHOPPER · CUTS RECORDS FOR THE CAROUSEL</span></div>
+        <div class="badge"><span class="badge__name">CHOP SHOP</span><span class="badge__tag">CASSETTE CHOPPER · CUTS TAPE FOR THE DECK</span></div>
         <div class="device__keys">
-          <button class="pb pb--small" id="lathe-resample" title="Render the song (bars in the loop, or the first 2) without the carousel and load it here">RESAMPLE SONG</button>
-          <button class="pb pb--small" id="lathe-load">LOAD AUDIO</button>
-          <button class="pb pb--small" id="lathe-record" aria-pressed="false">RECORD MIC</button>
+          <button class="key" id="lathe-resample" title="Render the song (bars in the loop, or the first 2) without the deck and load it here">RESAMPLE SONG</button>
+          <button class="key" id="lathe-load">LOAD AUDIO</button>
+          <button class="key" id="lathe-record" aria-pressed="false">RECORD MIC</button>
         </div>
         <div class="lamp is-armed" aria-hidden="true"></div>
       </header>
@@ -334,23 +398,23 @@ class App {
         <div class="lathe__ctl">
           <div class="lathe__group">
             <span class="lathe__lbl">CUT BY</span>
-            <button class="pb pb--small" data-cut="transient">TRANSIENTS</button>
-            <button class="pb pb--small" data-cut="4">4</button>
-            <button class="pb pb--small" data-cut="8">8</button>
-            <button class="pb pb--small" data-cut="16">16</button>
-            <button class="pb pb--small" data-cut="32">32</button>
+            <button class="key" data-cut="transient">TRANSIENTS</button>
+            <button class="key" data-cut="4">4</button>
+            <button class="key" data-cut="8">8</button>
+            <button class="key" data-cut="16">16</button>
+            <button class="key" data-cut="32">32</button>
           </div>
           <label class="lathe__group lathe__sens"><span class="lathe__lbl">SENSITIVITY</span><input type="range" min="0" max="1" step="0.01" value="0.55" id="lathe-sens" aria-label="Transient sensitivity"></label>
           <div class="lathe__group">
-            <button class="pb pb--small" id="lathe-normalize">NORMALIZE</button>
-            <button class="pb pb--small pb--lit" id="lathe-commit">PRESS TO CAROUSEL</button>
-            <button class="pb pb--small" id="lathe-export" title="Download this chop as a .rex.json slice file">EXPORT SLICES</button>
+            <button class="key" id="lathe-normalize">NORMALIZE</button>
+            <button class="key key--hot" id="lathe-commit">LOAD TO DECK</button>
+            <button class="key" id="lathe-export" title="Download this chop as a .slices.json file">EXPORT SLICES</button>
           </div>
-          <div class="lathe__readout title-strip"><span class="title-strip__name" id="lathe-name">EMPTY PLATTER</span><span class="title-strip__lbl" id="lathe-meta">—</span></div>
+          <div class="lathe__readout lcd"><span class="lcd__title" id="lathe-name">EMPTY REEL</span><span class="lcd__lbl" id="lathe-meta">—</span></div>
         </div>
         <input type="file" id="lathe-file" accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a,.aac" hidden>
       </div>
-      <div class="device__ear device__ear--r"></div>`;
+      <div class="device__screws" aria-hidden="true"></div>`;
     this.lathe = { buffer: null, slices: [], name: '', drag: null, peaks: null, recorder: null, canvas: $('#wave canvas'), origin: 'user' };
     this.bindLathe();
   }
@@ -358,26 +422,27 @@ class App {
   renderMaster() {
     const m = $('#master');
     m.innerHTML = `
-      <div class="device__ear device__ear--l"></div>
       <header class="device__head device__head--master">
-        <div class="title-strip"><span class="title-strip__name">SCREWTAPE</span><span class="title-strip__lbl">MASTER · TAPE · THE WHOLE CABINET GOES THROUGH HERE</span></div>
+        <div class="badge"><span class="badge__name">EXHAUST</span><span class="badge__tag">MASTER · TAPE SATURATION</span></div>
       </header>
       <div class="device__body device__body--master">
         <div class="device__knobs device__knobs--master"></div>
-        <div class="vu" aria-hidden="true"><div class="vu__scale"></div><div class="vu__nums"><span>-20</span><span>-10</span><span>-5</span><span>0</span><span>+3</span></div><div class="vu__needle"></div></div>
-        <div class="master__strip title-strip title-strip--info">
-          <span class="title-strip__name">HEARSE RIDE AT 2 A.M. — THE HOUSE RECORD</span>
-          <span class="title-strip__lbl">E minor · 136 · press INSERT COIN, then change anything. SAVE keeps the whole cabinet in one readable JSON file, chops included as WAV.</span>
+        <div class="vu" aria-hidden="true"><div class="vu__bars"></div><div class="vu__lbl">OUTPUT</div></div>
+        <div class="master__strip lcd lcd--info">
+          <span class="lcd__title">MASTER BUS</span>
+          <span class="lcd__lbl">Every device leaves through this tape stage. SAVE JSON keeps the whole dash in one readable file, chopped tape included as WAV.</span>
         </div>
       </div>
-      <div class="device__ear device__ear--r"></div>`;
+      <div class="device__screws" aria-hidden="true"></div>`;
     const knobs = $('.device__knobs--master', m);
     for (const p of MASTER_PARAMS) {
       const k = new Knob(p, this.song.master[p.id] ?? p.def, (v) => this.engine.setMaster(p.id, v), (v) => this.commit({ type: 'setMaster', param: p.id, value: v }, false));
       this.knobs.set('master.' + p.id, k);
       knobs.appendChild(k.el);
     }
-    this.vuNeedle = $('.vu__needle', m);
+    const bars = $('.vu__bars', m);
+    bars.innerHTML = Array.from({ length: 24 }, (_, i) => `<i class="${i >= 20 ? 'is-hot' : i >= 16 ? 'is-warm' : ''}"></i>`).join('');
+    this.vuBars = [...bars.children];
   }
 
   // ---------- binding ----------
@@ -396,7 +461,7 @@ class App {
     $('#open').addEventListener('click', () => $('#file-input').click());
     $('#file-input').addEventListener('change', (e) => { const f = e.target.files[0]; if (f) this.openFile(f); e.target.value = ''; });
     $('#new').addEventListener('click', () => { if (confirm('Start an empty cabinet? Unsaved changes are lost.')) this.loadSong(emptySong()); });
-    $('#demo').addEventListener('click', () => { if (confirm('Reload the house record? Unsaved changes are lost.')) this.loadSong(demoSong()); });
+    $('#demo').addEventListener('click', () => { if (confirm('Reload COUNTACH DRIFT? Unsaved changes are lost.')) this.loadSong(demoSong()); });
     $('#undo').addEventListener('click', () => this.undo());
     $('#redo').addEventListener('click', () => this.redo());
     $('#song-title').addEventListener('click', () => { const t = prompt('Song title', this.song.title); if (t != null) this.commit({ type: 'setTitle', title: t.toUpperCase() }, true); });
@@ -456,7 +521,7 @@ class App {
     this.engine.ui('coin');
     this.setLit(true);
     btn.classList.remove('is-busy');
-    btn.classList.add('is-paid');
+    btn.classList.add('is-on');
     btn.setAttribute('aria-label', 'Play');
     const dev = findDevice(this.song, 'carousel');
     this.drawSliceKeys(dev);
@@ -465,12 +530,12 @@ class App {
       this.lathe.slices = dev.audio.slices.map((x) => ({ ...x })); this.lathe.peaks = null;
       $('#wave-hint').hidden = true; this.drawLathe(); this.latheMeta();
     }
-    if (autoplay) setTimeout(() => this.engine.play(), 520);
+    if (autoplay) setTimeout(() => this.engine.play(), 700);
   }
   setLit(on) {
     this.lit = on;
     document.body.classList.toggle('is-lit', on);
-    $('#coin').classList.toggle('is-lit', on);
+    $('#coin').classList.toggle('is-on', on);
   }
 
   // ---------- state changes ----------
@@ -497,6 +562,7 @@ class App {
   }
   refreshUI() {
     $('#song-title').textContent = this.song.title;
+    if ($('#hero-title')) $('#hero-title').textContent = this.song.title;
     this.cBpm.set(this.song.bpm);
     $('#swing').value = this.song.swing; $('#swing-val').textContent = Math.round(this.song.swing * 100) + '%';
     for (const dev of this.song.devices) {
@@ -554,6 +620,7 @@ class App {
     downloadBlob(new Blob([json], { type: 'application/json' }), safeFilename(this.song.title) + '.noise.json');
     this.dirty = false;
     this.toast(`Saved ${safeFilename(this.song.title)}.noise.json (${(json.length / 1024).toFixed(0)} KB)`);
+    $('#hero-title') && ($('#hero-title').textContent = this.song.title);
   }
   serializeCold() {
     const s = JSON.parse(JSON.stringify({ ...this.song, devices: this.song.devices.map((d) => ({ ...d, audio: d.audio ? { name: d.audio.name, slices: d.audio.slices, origin: d.audio.origin, wav: d.audio.wav || null } : d.audio })) }));
@@ -614,7 +681,7 @@ class App {
     $('#lathe-resample').addEventListener('click', () => this.latheResample());
     $('#lathe-record').addEventListener('click', () => this.latheRecord());
     $$('[data-cut]').forEach((b) => b.addEventListener('click', () => {
-      if (!L.buffer) return this.toast('Put something on the platter first.', true);
+      if (!L.buffer) return this.toast('Put something on the reel first.', true);
       const cut = b.dataset.cut;
       L.slices = cut === 'transient' ? detectSlices(L.buffer, +$('#lathe-sens').value) : sliceEven(L.buffer, +cut);
       this.drawLathe(); this.latheMeta();
@@ -622,11 +689,11 @@ class App {
     $('#lathe-sens').addEventListener('change', () => { if (L.buffer) { L.slices = detectSlices(L.buffer, +$('#lathe-sens').value); this.drawLathe(); this.latheMeta(); } });
     $('#lathe-normalize').addEventListener('click', async () => { if (!L.buffer) return; await this.ensureAudio(); L.buffer = normalizeBuffer(this.engine.ctx, L.buffer); L.peaks = null; this.drawLathe(); this.toast('Normalized'); });
     $('#lathe-commit').addEventListener('click', async () => {
-      if (!L.buffer) return this.toast('Nothing to press. Load, record, or resample first.', true);
+      if (!L.buffer) return this.toast('Nothing to load. Drop audio, record, or resample first.', true);
       await this.ensureAudio();
       this.engine.setCarouselAudio(L.buffer, L.slices.map((s) => ({ ...s })), L.name, L.origin);
       this.history.snapshot(this.song); this.dirty = true;
-      this.toast(`Pressed ${L.slices.length} slices to the CAROUSEL`);
+      this.toast(`Loaded ${L.slices.length} slices into the TAPE DECK`);
       $('#rack .device--carousel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     $('#lathe-export').addEventListener('click', async () => {
@@ -710,19 +777,19 @@ class App {
   }
   latheMeta() {
     const L = this.lathe;
-    $('#lathe-name').textContent = L.name || 'EMPTY PLATTER';
+    $('#lathe-name').textContent = L.name || 'EMPTY REEL';
     $('#lathe-meta').textContent = L.buffer ? `${L.buffer.duration.toFixed(2)}s · ${L.buffer.sampleRate} Hz · ${L.slices.length} CUTS` : '—';
   }
   async latheResample() {
     await this.ensureAudio();
     const btn = $('#lathe-resample');
-    btn.disabled = true; btn.textContent = 'CUTTING…';
+    btn.disabled = true; btn.textContent = 'DUBBING…';
     try {
       const loop = this.engine.loop;
       const a = loop.on ? loop.startBar : 0, b = loop.on ? loop.endBar : Math.min(2, this.song.arrangement.bars);
       const buf = await this.engine.renderRange(a, b, { exclude: ['carousel'], hiss: false });
       this.lathePut(normalizeBuffer(this.engine.ctx, buf), `RESAMPLE BARS ${a + 1}–${b}`, 'lathe');
-      this.toast(`Cut bars ${a + 1}–${b} of the song onto the platter`);
+      this.toast(`Dubbed bars ${a + 1}–${b} of the song onto the reel`);
     } catch (err) { console.error(err); this.toast('Resample failed: ' + err.message, true); }
     btn.disabled = false; btn.textContent = 'RESAMPLE SONG';
   }
@@ -769,24 +836,25 @@ class App {
     c.clearRect(0, 0, w, h);
     if (!L.buffer) return;
     if (!L.peaks || L.peaks.length !== w) L.peaks = peaks(L.buffer, w);
-    const cs = getComputedStyle(document.documentElement);
-    const cream = cs.getPropertyValue('--cream').trim(), red = cs.getPropertyValue('--strip-red').trim(), blue = cs.getPropertyValue('--strip-blue').trim(), bulb = cs.getPropertyValue('--bulb').trim();
+    const MAG = '#ff2bd6', CYAN = '#19e6ff', CHROME = '#dbe2f4';
     const dur = L.buffer.duration;
-    // slice bands alternate red/blue rulings like title strips
+    // slice bands alternate magenta/cyan washes
     L.slices.forEach((s, i) => {
       const x0 = (s.start / dur) * w, x1 = (s.end / dur) * w;
-      c.fillStyle = i % 2 ? 'rgba(45,94,168,.16)' : 'rgba(200,56,43,.16)';
+      c.fillStyle = i % 2 ? 'rgba(25,230,255,.10)' : 'rgba(255,43,214,.12)';
       c.fillRect(x0, 0, x1 - x0, h);
     });
-    c.fillStyle = cream;
     const mid = h / 2;
-    for (let x = 0; x < w; x++) { const p = L.peaks[x] * (h / 2 - 6); c.fillRect(x, mid - p, 1, Math.max(1, p * 2)); }
+    c.fillStyle = CHROME;
+    for (let x = 0; x < w; x++) { const p = L.peaks[x] * (h / 2 - 8); c.fillRect(x, mid - p, 1, Math.max(1, p * 2)); }
     L.slices.forEach((s, i) => {
       const x = Math.round((s.start / dur) * w);
-      c.fillStyle = i === 0 ? 'rgba(241,230,200,.4)' : bulb; c.fillRect(x, 0, 2, h);
-      c.fillStyle = i % 2 ? blue : red; c.fillRect(x + 3, 4, 22, 14);
-      c.fillStyle = cream; c.font = '700 11px "League Gothic", Impact, sans-serif'; c.textBaseline = 'middle'; c.textAlign = 'left';
-      c.fillText(String(i + 1).padStart(2, '0'), x + 7, 11.5);
+      c.fillStyle = i === 0 ? 'rgba(219,226,244,.4)' : MAG;
+      if (i) { c.shadowColor = MAG; c.shadowBlur = 8; }
+      c.fillRect(x, 0, 2, h); c.shadowBlur = 0;
+      c.fillStyle = i % 2 ? CYAN : MAG; c.fillRect(x + 3, 4, 26, 16);
+      c.fillStyle = '#0a0514'; c.font = '700 10px Michroma, "Arial Narrow", sans-serif'; c.textBaseline = 'middle'; c.textAlign = 'center';
+      c.fillText(String(i + 1).padStart(2, '0'), x + 16, 12.5);
     });
   }
 
@@ -877,12 +945,14 @@ class App {
       $$('.selector .sel.is-now', this.cabinet).forEach((b) => b.classList.remove('is-now'));
       if (this.detachedWin && !this.detachedWin.closed) this.send({ type: 'step', step: -1 });
     }
-    this.cBpm.set(Math.round(this.engine.effectiveBpm()));
+    const ebpm = this.engine.effectiveBpm();
+    this.cBpm.set(Math.round(ebpm));
+    if (this.tachNeedle) { const n = Math.max(0, Math.min(1, (ebpm - 60) / 140)); this.tachNeedle.setAttribute('transform', `rotate(${-90 + n * 180} 100 110)`); }
     // meters + scopes
     if (this.engine.ready) {
       const m = this.engine.master.meter();
-      const deg = -48 + Math.min(1, m.rms * 3.2) * 96;
-      this.vuNeedle.style.transform = `rotate(${deg}deg)`;
+      const lit = Math.round(Math.min(1, m.peak * 1.15) * this.vuBars.length);
+      this.vuBars.forEach((b, i) => b.classList.toggle('is-lit', i < lit));
       this.cabinet.style.setProperty('--glow', (this.engine.playing ? 0.55 + Math.min(0.45, m.rms * 1.6) : 0.25).toFixed(3));
       this.drawScopes();
     }
@@ -915,7 +985,10 @@ class App {
     return ((bar - blk.bar) * STEPS_PER_BAR + (step % STEPS_PER_BAR)) % pat.steps;
   }
   drawScopes() {
-    const draw = (canvas, data, color, mode) => {
+    // Each scope keeps a "memory" of the last loud waveform and lets it fade, so an idle device
+    // shows what it last said instead of a dead flat line.
+    this._scopeMem = this._scopeMem || new Map();
+    const draw = (key, canvas, data, color, mode) => {
       if (!canvas) return;
       const r = canvas.parentElement.getBoundingClientRect();
       const w = Math.floor(r.width), h = Math.floor(r.height);
@@ -923,25 +996,37 @@ class App {
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       const c = canvas.getContext('2d');
       c.clearRect(0, 0, w, h);
-      c.strokeStyle = color; c.lineWidth = 1.5; c.beginPath();
       const n = data.length;
+      let energy = 0; for (let i = 0; i < n; i++) energy += Math.abs(data[i] - 128);
+      energy /= n * 128;
+      let mem = this._scopeMem.get(key);
+      if (!mem) { mem = { buf: new Float32Array(n), fade: 0 }; this._scopeMem.set(key, mem); }
+      if (energy > 0.01) { for (let i = 0; i < n; i++) mem.buf[i] = (data[i] - 128) / 128; mem.fade = 1; }
+      else mem.fade = Math.max(0.16, mem.fade * 0.985);
+      const live = energy > 0.01;
+      c.strokeStyle = color; c.lineWidth = 2; c.lineJoin = 'round';
+      c.globalAlpha = live ? 1 : mem.fade;
+      c.shadowColor = color; c.shadowBlur = live ? 10 : 4;
+      c.beginPath();
+      const gain = mode === 'nave' ? 2.2 : 1.3;
       for (let i = 0; i < n; i++) {
-        const v = (data[i] - 128) / 128;
+        const v = live ? (data[i] - 128) / 128 : mem.buf[i] * (0.4 + 0.6 * mem.fade);
         const x = (i / (n - 1)) * w;
-        const y = h / 2 - Math.max(-1, Math.min(1, v * (mode === 'nave' ? 2.2 : 1.3))) * (h / 2 - 4);
+        const y = h / 2 - Math.max(-1, Math.min(1, v * gain)) * (h / 2 - 8);
         i ? c.lineTo(x, y) : c.moveTo(x, y);
       }
       c.stroke();
+      c.shadowBlur = 0; c.globalAlpha = 1;
     };
     const cs = this._cs || (this._cs = getComputedStyle(document.documentElement));
-    const bulb = cs.getPropertyValue('--bulb').trim(), red = cs.getPropertyValue('--strip-red').trim(), blue = cs.getPropertyValue('--strip-blue').trim();
+    const mag = cs.getPropertyValue('--mag').trim() || '#ff2bd6', cyan = cs.getPropertyValue('--cyan').trim() || '#19e6ff';
     const h = this.engine.devices.get('hearse');
-    if (h) { draw(this.hearseScope, h.scope(), bulb); if (h.lastMidi != null && this.hearseNote.textContent !== noteName(h.lastMidi)) this.hearseNote.textContent = noteName(h.lastMidi); }
+    if (h) { draw('hearse', this.hearseScope, h.scope(), mag); if (h.lastMidi != null && this.hearseNote.textContent !== noteName(h.lastMidi)) this.hearseNote.textContent = noteName(h.lastMidi); }
     const c = this.engine.devices.get('cathedral');
-    if (c) { draw(this.naveCanvas, c.scope(), blue, 'nave'); if (this.bellCount.textContent !== String(c.rung || 0)) this.bellCount.textContent = String(c.rung || 0).padStart(4, '0'); }
+    if (c) { draw('cathedral', this.naveCanvas, c.scope(), cyan, 'nave'); if (this.bellCount.textContent !== String(c.rung || 0)) this.bellCount.textContent = String(c.rung || 0).padStart(4, '0'); }
     const p = this.engine.devices.get('preacher');
     if (p) {
-      draw(this.mouthCanvas, p.scope(), red);
+      draw('preacher', this.mouthCanvas, p.scope(), mag);
       const v = p.params.vowel; this.vowelLbl.textContent = VOWEL_NAMES[Math.round(Math.max(0, Math.min(4, v)))];
     }
   }
@@ -963,72 +1048,56 @@ class App {
     let active = -1;
     if (inst?.current && inst.current.until > now && inst._lastIdx != null) active = inst._lastIdx;
     const playing = this.engine.playing;
-    this.carouselAngle = (this.carouselAngle || 0) + (playing ? 0.05 * this.engine.pitchRatio : 0.004);
-    // A record magazine: every slice is a 45 standing in the rack, seen three-quarter on. The carriage
-    // travels the rail, the selected record comes forward spinning, and the tone arm drops on it.
-    const pad = 34;
-    const count = Math.max(n, 1);
-    const spacing = (w - pad * 2) / count;
-    const rad = Math.max(16, Math.min(h * 0.3, spacing * 0.5, 70));
-    const railY = h - 44;
-    const rowY = railY - 14 - rad;
-    const xAt = (i) => pad + spacing * (i + 0.5);
-    const target = active >= 0 ? xAt(active) : (this.carriageX ?? xAt(0));
-    this.carriageX = this.carriageX == null ? target : this.carriageX + (target - this.carriageX) * 0.16;
-    // rail
-    c.fillStyle = '#26211d'; c.fillRect(pad - 14, railY, w - pad * 2 + 28, 8);
-    c.fillStyle = '#b8b6ae'; c.fillRect(pad - 14, railY, w - pad * 2 + 28, 2);
-    const drawRecord = (x, y, r, squash, label, spin, lit) => {
-      c.save(); c.translate(x, y); c.scale(squash, 1); c.rotate(spin);
-      c.fillStyle = '#0b0a09'; c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
-      c.strokeStyle = lit ? 'rgba(241,230,200,.16)' : 'rgba(241,230,200,.10)'; c.lineWidth = 1;
-      for (let g = r * 0.42; g < r; g += 3.5) { c.beginPath(); c.arc(0, 0, g, 0, Math.PI * 2); c.stroke(); }
-      c.fillStyle = label % 2 ? '#2d5ea8' : '#b52e22'; c.beginPath(); c.arc(0, 0, r * 0.36, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#f1e6c8'; c.beginPath(); c.arc(0, 0, r * 0.06, 0, Math.PI * 2); c.fill();
-      c.fillStyle = '#f1e6c8'; c.font = `700 ${Math.max(9, r * 0.2)}px "League Gothic", Impact, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(String(label + 1).padStart(2, '0'), 0, -r * 0.2);
+    const MAG = '#ff2bd6', CYAN = '#19e6ff', CHROME = '#dbe2f4', DIM = 'rgba(219,226,244,.18)';
+    // cassette window: two reels; tape moves from the left hub to the right while playing
+    this.tapePos = Math.max(0, Math.min(1, (this.tapePos ?? 0.32) + (playing ? 0.00035 * this.engine.pitchRatio : 0)));
+    if (this.tapePos >= 1) this.tapePos = 0;
+    this.reelAngle = (this.reelAngle || 0) + (playing ? 0.05 * this.engine.pitchRatio : 0.003) * (active >= 0 ? 2.2 : 1);
+    const hubY = h * 0.5;
+    const hubL = w * 0.28, hubR = w * 0.72;
+    const rBase = Math.min(h * 0.24, w * 0.11);
+    const drawReel = (x, fill) => {
+      const rTape = rBase * (0.55 + fill * 0.45);
+      c.fillStyle = '#12091f'; c.beginPath(); c.arc(x, hubY, rTape, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = 'rgba(255,43,214,.22)'; c.lineWidth = 1;
+      for (let g = rBase * 0.5; g < rTape; g += 3) { c.beginPath(); c.arc(x, hubY, g, 0, Math.PI * 2); c.stroke(); }
+      // hub with six spokes
+      c.save(); c.translate(x, hubY); c.rotate(this.reelAngle);
+      c.fillStyle = '#e8ecf8'; c.beginPath(); c.arc(0, 0, rBase * 0.5, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#0a0514';
+      for (let k = 0; k < 6; k++) { c.rotate(Math.PI / 3); c.fillRect(-rBase * 0.06, rBase * 0.18, rBase * 0.12, rBase * 0.26); }
+      c.beginPath(); c.arc(0, 0, rBase * 0.14, 0, Math.PI * 2); c.fill();
       c.restore();
-      if (lit) { c.strokeStyle = 'rgba(240,169,58,.9)'; c.lineWidth = 2; c.save(); c.translate(x, y); c.scale(squash, 1); c.beginPath(); c.arc(0, 0, r + 1, 0, Math.PI * 2); c.stroke(); c.restore(); }
     };
-    for (let i = 0; i < count; i++) {
-      if (i === active) continue;
-      if (n) drawRecord(xAt(i), rowY, rad, 0.46, i, 0.35, false);
-      c.fillStyle = 'rgba(241,230,200,.7)'; c.font = `700 ${Math.max(10, Math.min(13, spacing * 0.3))}px "League Gothic", Impact, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'top';
-      if (n) c.fillText(String(i + 1).padStart(2, '0'), xAt(i), railY + 16);
+    drawReel(hubL, 1 - this.tapePos);
+    drawReel(hubR, this.tapePos);
+    // tape path across the bottom with a head in the middle
+    c.strokeStyle = '#3a1d5c'; c.lineWidth = 3;
+    const ty = h * 0.86;
+    c.beginPath(); c.moveTo(hubL, hubY + rBase * 1.02); c.lineTo(w * 0.42, ty); c.lineTo(w * 0.58, ty); c.lineTo(hubR, hubY + rBase * 1.02); c.stroke();
+    c.fillStyle = CHROME; c.fillRect(w * 0.5 - 9, ty - 8, 18, 12);
+    c.fillStyle = active >= 0 ? MAG : '#3a1d5c'; c.fillRect(w * 0.5 - 3, ty - 3, 6, 4);
+    // slice segments across the top: the tape's cut map; the firing slice lights magenta
+    if (n) {
+      const pad = 14, segW = (w - pad * 2) / n, y = 8, sh = 8;
+      for (let i = 0; i < n; i++) {
+        const x = pad + i * segW;
+        c.fillStyle = i === active ? MAG : (i % 2 ? 'rgba(25,230,255,.35)' : 'rgba(25,230,255,.22)');
+        c.fillRect(x + 1, y, segW - 2, sh);
+        if (i === active) { c.shadowColor = MAG; c.shadowBlur = 12; c.fillRect(x + 1, y, segW - 2, sh); c.shadowBlur = 0; }
+        c.fillStyle = i === active ? '#fff' : 'rgba(219,226,244,.7)'; c.font = `700 ${Math.max(9, Math.min(11, segW * 0.28))}px Michroma, "Arial Narrow", sans-serif`; c.textAlign = 'center'; c.textBaseline = 'top';
+        c.fillText(String(i + 1).padStart(2, '0'), x + segW / 2, y + sh + 3);
+      }
+    } else {
+      c.fillStyle = 'rgba(219,226,244,.75)'; c.font = '700 13px Michroma, "Arial Narrow", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('NO TAPE IN THE DECK — CUT ONE IN THE CHOP SHOP', w / 2, 16);
     }
-    // carriage
-    c.fillStyle = '#b8b6ae'; c.fillRect(this.carriageX - 14, railY - 6, 28, 14);
-    c.fillStyle = '#5f5d58'; c.fillRect(this.carriageX - 14, railY + 6, 28, 2);
-    c.fillStyle = active >= 0 ? '#f0a93a' : '#3a3633'; c.fillRect(this.carriageX - 5, railY - 3, 10, 6);
-    // active record: forward, face-on, spinning
-    const activeY = rowY - rad * 0.2;
-    if (active >= 0 && n) {
-      drawRecord(xAt(active), activeY, rad * 1.3, 1, active, this.carouselAngle, true);
-      c.fillStyle = 'rgba(241,230,200,.9)'; c.font = `700 ${Math.max(10, Math.min(13, spacing * 0.3))}px "League Gothic", Impact, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'top';
-      c.fillText(String(active + 1).padStart(2, '0'), xAt(active), railY + 16);
-    }
-    // tone arm: pivot post at top-left; rests on its post when idle, drops onto the active record
-    const ax = w * 0.05, ay = h * 0.14;
-    const restTip = { x: ax + Math.min(160, w * 0.16), y: ay + 10 };
-    const tipTarget = active >= 0 && n ? { x: xAt(active) + rad * 0.55, y: activeY - rad * 0.55 } : restTip;
-    this.armTip = this.armTip ? { x: this.armTip.x + (tipTarget.x - this.armTip.x) * 0.2, y: this.armTip.y + (tipTarget.y - this.armTip.y) * 0.2 } : tipTarget;
-    // rest post
-    c.fillStyle = '#5f5d58'; c.fillRect(restTip.x - 3, restTip.y, 6, 16);
-    c.fillStyle = '#b8b6ae'; c.fillRect(restTip.x - 8, restTip.y + 14, 16, 4);
-    // arm
-    c.strokeStyle = '#7d7b76'; c.lineWidth = 6; c.lineCap = 'round'; c.beginPath(); c.moveTo(ax, ay); c.lineTo(this.armTip.x, this.armTip.y); c.stroke();
-    c.strokeStyle = '#ecebe6'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(ax, ay); c.lineTo(this.armTip.x, this.armTip.y); c.stroke();
-    c.fillStyle = '#b8b6ae'; c.beginPath(); c.arc(ax, ay, 10, 0, Math.PI * 2); c.fill();
-    c.fillStyle = '#0a0908'; c.beginPath(); c.arc(ax, ay, 3.5, 0, Math.PI * 2); c.fill();
-    // headshell
-    c.save(); c.translate(this.armTip.x, this.armTip.y); c.rotate(Math.atan2(this.armTip.y - ay, this.armTip.x - ax));
-    c.fillStyle = '#b8b6ae'; c.fillRect(-10, -5, 20, 10);
-    c.fillStyle = active >= 0 ? '#f0a93a' : '#5f5d58'; c.fillRect(6, -2, 6, 4);
-    c.restore();
-    if (n === 0) {
-      c.fillStyle = 'rgba(241,230,200,.75)'; c.font = '700 16px "League Gothic", Impact, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText('NO RECORD ON THE CAROUSEL — CUT ONE ON THE LATHE BELOW', w / 2, rowY);
-    }
+    // counter
+    const cnt = String(Math.floor(this.tapePos * 999)).padStart(3, '0');
+    c.fillStyle = '#05030c'; c.fillRect(w * 0.5 - 34, hubY - 14, 68, 28);
+    c.strokeStyle = DIM; c.lineWidth = 1; c.strokeRect(w * 0.5 - 34, hubY - 14, 68, 28);
+    c.fillStyle = CYAN; c.font = '700 17px Michroma, "Arial Narrow", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(cnt, w * 0.5, hubY + 1);
   }
   flash(btn) { btn.classList.add('is-hit'); setTimeout(() => btn.classList.remove('is-hit'), 120); }
   toast(msg, warn = false) {

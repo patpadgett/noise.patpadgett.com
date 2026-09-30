@@ -95,7 +95,7 @@ export class Engine extends EventTarget {
     if (def.audio === null || def.audio === undefined) {
       const buf = await this.bakeDemoSample();
       const slices = sliceEven(buf, 8);
-      def.audio = { name: 'SERMON RESAMPLE', buffer: buf, slices, origin: 'baked' };
+      def.audio = { name: 'HEY TAPE · SIDE A', buffer: buf, slices, origin: 'baked' };
       this.devices.get(def.id)?.setAudio(buf, slices);
       this.dispatchEvent(new Event('audio'));
     }
@@ -105,21 +105,28 @@ export class Engine extends EventTarget {
   // offline through a tape stage, so the app ships with no sample files at all.
   async bakeDemoSample() {
     const sr = 44100;
-    const bpm = 136;
+    const bpm = 140;
     const stepSec = 60 / bpm / 4;
     const bars = 2;
     const len = Math.ceil(sr * stepSec * STEPS_PER_BAR * bars);
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     const off = new OAC(2, len, sr);
-    const tape = new S.Screwtape(off, off.destination, { saturation: 0.55, tone: 5200, wow: 0.35, hiss: 0.0, level: 0.9 });
-    const pre = new S.Preacher(off, tape.input, { params: { vowel: 2.2, throat: 0.7, grit: 0.5, sermon: 0.6, tail: 0.5, octave: 0, level: 0.8 } }, null);
-    const cat = new S.Cathedral(off, tape.input, { params: { decay: 0.5, bell: 1.62, choir: 0.6, nave: 0.7, level: 0.55 } }, null);
-    const hearse = new S.Hearse(off, tape.input, { params: { decay: 0.6, glide: 0.1, coffin: 0.3, tone: 700, rumble: 0.2, level: 0.6 } }, null);
-    const P = [[0, 52, 3], [4, 55, 2], [8, 59, 3], [12, 57, 2], [16, 52, 4], [20, 50, 2], [24, 55, 3], [28, 52, 3]];
-    for (const [s, n, l] of P) pre.noteOn(s * stepSec, n, 0.9, l * stepSec);
-    const C = [[2, 76], [6, 79], [10, 74], [14, 71], [18, 76], [22, 74], [26, 79], [30, 83]];
-    for (const [s, n] of C) cat.noteOn(s * stepSec, n, 0.8, 0.3);
-    for (const [s, n] of [[0, 28], [8, 31], [16, 28], [24, 26]]) hearse.noteOn(s * stepSec, n, 0.7, 0.5);
+    const tape = new S.Screwtape(off, off.destination, { saturation: 0.7, tone: 4800, wow: 0.3, hiss: 0.0, level: 1.0 });
+    const talk = new S.Preacher(off, tape.input, { params: { vowel: 0.4, throat: 0.75, grit: 0.7, sermon: 0.1, tail: 0.3, octave: 0, level: 0.9 } }, null);
+    const bell = new S.Cathedral(off, tape.input, { params: { decay: 0.45, bell: 1.62, choir: 0.7, grit: 0.6, nave: 0.5, level: 0.7 } }, null);
+    const sub = new S.Hearse(off, tape.input, { params: { decay: 0.5, glide: 0.1, coffin: 0.5, tone: 900, rumble: 0.3, level: 0.6 } }, null);
+    // eight distinct hits, one per slice: HEY chants, bell dings, a sub thump, a low OH
+    const events = [
+      [0, () => talk.noteOn(0, 52, 1, stepSec * 2)],
+      [4, (t) => bell.noteOn(t, 76, 0.9, 0.3)],
+      [8, (t) => talk.noteOn(t, 55, 0.95, stepSec * 2)],
+      [12, (t) => sub.noteOn(t, 28, 0.9, 0.4)],
+      [16, (t) => { talk.set('vowel', 3.2); talk.noteOn(t, 40, 1, stepSec * 3); }],
+      [20, (t) => bell.noteOn(t, 79, 0.9, 0.3)],
+      [24, (t) => { talk.set('vowel', 1.6); talk.noteOn(t, 52, 0.95, stepSec * 2); }],
+      [28, (t) => { bell.noteOn(t, 71, 0.9, 0.3); bell.noteOn(t + 0.06, 76, 0.7, 0.3); }],
+    ];
+    for (const [step, fn] of events) fn(step * stepSec + 0.01);
     const buf = await off.startRendering();
     return buf;
   }
@@ -312,7 +319,7 @@ export class Engine extends EventTarget {
   }
 
   // Render bars [startBar, endBar) offline through the tape stage. `exclude` skips device types
-  // (the LATHE resamples the song without the carousel so chops don't chop chops).
+  // (the CHOP SHOP resamples the song without the tape deck so chops don't chop chops).
   async renderRange(startBar, endBar, { tail = 0, exclude = [], onProgress, hiss = true } = {}) {
     const song = this.song;
     const sr = 44100;

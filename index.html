@@ -3,100 +3,124 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NOISE — Select-O-Matic phonk workstation</title>
-<meta name="description" content="A late-night jukebox that makes phonk instead of playing it. Drum machine, sliding 808, cowbell melodies, formant stabs, a record-chopper and a slice player, all in the browser. Save your song as one readable JSON file.">
-<meta property="og:title" content="NOISE — Select-O-Matic">
-<meta property="og:description" content="Browser phonk workstation. Insert coin, change anything, take the song home as JSON.">
+<title>NOISE — Midnight Countach phonk workstation</title>
+<meta name="description" content="A synthwave phonk workstation in the browser. Twelve-cylinder drums, a distorted sliding 808, cowbell lasers, talkbox chants, a cassette chopper and a slice deck. Save your song as one readable JSON file.">
+<meta property="og:title" content="NOISE — Midnight Countach">
+<meta property="og:description" content="Browser phonk workstation. Turn the key, change anything, take the song home as JSON.">
+<meta property="og:image" content="https://noise.patpadgett.com/assets/art/countach.jpg">
 <meta property="og:url" content="https://noise.patpadgett.com/">
-<meta name="theme-color" content="#0c0a09">
-<link rel="icon" href="assets/coin.svg" type="image/svg+xml">
-<link rel="preload" href="assets/fonts/league-gothic.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="assets/fonts/special-elite.woff2" as="font" type="font/woff2" crossorigin>
+<meta name="theme-color" content="#0a0514">
+<link rel="icon" href="assets/key.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/audiowide.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/michroma.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/art/countach.webp" as="image" type="image/webp">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
     <linearGradient id="kchrome" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fdfdfb"/><stop offset=".18" stop-color="#b9b9b6"/><stop offset=".5" stop-color="#6f6f6d"/><stop offset=".62" stop-color="#e2e2df"/><stop offset="1" stop-color="#8a8a88"/>
+      <stop offset="0" stop-color="#ffffff"/><stop offset=".2" stop-color="#b9c2d6"/><stop offset=".5" stop-color="#4a5270"/><stop offset=".62" stop-color="#dbe2f4"/><stop offset="1" stop-color="#7a839c"/>
     </linearGradient>
     <radialGradient id="kcap" cx=".4" cy=".35" r=".8">
-      <stop offset="0" stop-color="#3a332e"/><stop offset=".6" stop-color="#15110f"/><stop offset="1" stop-color="#050404"/>
+      <stop offset="0" stop-color="#2a1d4a"/><stop offset=".6" stop-color="#0f0a20"/><stop offset="1" stop-color="#050310"/>
     </radialGradient>
   </defs>
 </svg>
 
-<div id="cabinet" class="cabinet">
-  <header class="marquee">
-    <div class="marquee__bulbs" aria-hidden="true"></div>
-    <div class="marquee__row">
-      <h1 class="marquee__name"><span class="marquee__n">N</span><span class="marquee__n">O</span><span class="marquee__n">I</span><span class="marquee__n">S</span><span class="marquee__n">E</span></h1>
-      <div class="marquee__model">
-        <span class="marquee__line">SELECT-O-MATIC</span>
-        <span class="marquee__line marquee__line--sub">PHONK WORKSTATION · 5 DEVICES · 1 LATHE · NO SAMPLES, NO SERVER</span>
-      </div>
-      <nav class="marquee__nav" aria-label="Cabinet">
-        <a href="#rack" data-code="A1">RACK</a>
-        <a href="#lathe" data-code="A2">LATHE</a>
-        <a href="#editor" data-code="B1">EDITOR</a>
-        <a href="#manual" data-code="B2">MANUAL</a>
+<div class="sky" aria-hidden="true">
+  <div class="sky__sun"></div>
+  <div class="sky__grid"></div>
+</div>
+
+<div id="cabinet" class="dash">
+  <header class="hero">
+    <picture class="hero__art">
+      <source srcset="assets/art/countach.webp" type="image/webp">
+      <img src="assets/art/countach.jpg" width="1600" height="1095" alt="A white Lamborghini Countach on a wet neon street under a striped synthwave sun" fetchpriority="high">
+    </picture>
+    <div class="hero__laser hero__laser--a"></div>
+    <div class="hero__laser hero__laser--b"></div>
+    <div class="hero__top">
+      <h1 class="wordmark"><span class="wordmark__word">NOISE</span><span class="wordmark__sub">MIDNIGHT COUNTACH · PHONK WORKSTATION</span></h1>
+      <nav class="hero__nav" aria-label="Sections">
+        <a class="key key--ghost" href="#rack">RACK</a>
+        <a class="key key--ghost" href="#lathe">CHOPS</a>
+        <a class="key key--ghost" href="#editor">EDITOR</a>
+        <a class="key key--ghost" href="#manual">MANUAL</a>
       </nav>
     </div>
-    <div class="marquee__bulbs" aria-hidden="true"></div>
+    <div class="hero__plate" aria-hidden="true"><span>PHONK</span></div>
+    <div class="hero__tag">
+      <span class="tag__line">NOW LOADED</span>
+      <span class="tag__title" id="hero-title">COUNTACH DRIFT</span>
+      <span class="tag__meta">140 · E MINOR · TURN THE KEY</span>
+    </div>
   </header>
 
   <div id="resume" class="resume" hidden>
-    <span class="resume__txt">An unsaved cabinet from last time is on the platter: <b id="resume-title"></b></span>
-    <button class="pb pb--small pb--lit" id="resume-yes">BRING IT BACK</button>
-    <button class="pb pb--small" id="resume-no">FORGET IT</button>
+    <span class="resume__txt">An unsaved song from last time is still in the deck: <b id="resume-title"></b></span>
+    <button class="key key--hot" id="resume-yes">LOAD IT</button>
+    <button class="key" id="resume-no">FORGET IT</button>
   </div>
 
-  <section id="transport" class="transport" aria-label="Transport"></section>
+  <section id="transport" class="cluster" aria-label="Transport"></section>
 
-  <main id="rack" class="rack" aria-label="Device rack"></main>
+  <div class="stage">
+    <main id="rack" class="rack" aria-label="Device rack"></main>
+    <aside class="side" aria-label="Poster and master">
+      <div class="pinup">
+        <picture>
+          <source srcset="assets/art/pinup.webp" type="image/webp">
+          <img src="assets/art/pinup.jpg" width="821" height="1200" alt="Synthwave pin-up: a woman in a hot-pink bikini and mirrored aviators leaning on the Countach's open scissor door" loading="lazy">
+        </picture>
+        <div class="pinup__frame" aria-hidden="true"></div>
+        <div class="pinup__caption"><span>SIDE A</span><span>NO SAMPLES · NO SERVER · ALL SYNTH</span></div>
+      </div>
+      <section id="master" class="device device--master device--magenta" aria-label="Exhaust master"></section>
+    </aside>
+  </div>
 
-  <section id="lathe" class="device device--lathe device--blue" aria-label="Lathe chopper"></section>
-
-  <section id="master" class="device device--master device--red" aria-label="Screwtape master"></section>
+  <section id="lathe" class="device device--lathe device--cyan" aria-label="Chop shop"></section>
 
   <section class="editor-shell">
     <div id="editor-dock" class="editor-dock" hidden>
-      <span class="editor-dock__txt">The editor is in its own window.</span>
-      <button class="pb pb--small">BRING IT BACK</button>
+      <span class="editor-dock__txt">The editor is riding in its own window.</span>
+      <button class="key">BRING IT BACK</button>
     </div>
     <div id="editor" aria-label="Pattern and song editor"></div>
   </section>
 
   <section id="manual" class="manual" aria-label="Manual">
-    <div class="manual__strip title-strip"><span class="title-strip__name">OPERATING INSTRUCTIONS</span><span class="title-strip__lbl">READ ONCE, THEN IGNORE</span></div>
+    <h2 class="manual__title">OWNER'S MANUAL</h2>
     <div class="manual__cols">
       <div class="manual__col">
-        <h2>Starting</h2>
-        <p>Press <b>INSERT COIN</b>. The cabinet lights and the house record plays. Space plays and stops. Everything you hear is synthesized in the browser: there are no sample files, no account, no server.</p>
-        <h2>The devices</h2>
-        <p><b>BREAKER</b> is the drum machine. The letter-and-number pushbuttons are one bar of the current pattern (BAR 1 / BAR 2 pages the rest): press one to write a hit, press a lane's name to hear it. To tune a lane: right-click its name (shift for down), roll the wheel over it, or use <b>TUNE −/+</b> in the editor's toolbar. <b>MEMPHIS</b> crushes it toward a fourth-generation cassette.</p>
-        <p><b>HEARSE</b> is the 808. In the editor, shift-click a note (or select it and press <b>SLIDE</b> in the toolbar) to glide into it from the note before. <b>COFFIN</b> is the drive. <b>COWBELL CATHEDRAL</b> plays the melody; <b>CHOIR</b> stacks detuned bells, <b>NAVE</b> is the hall. <b>PREACHER</b> sings formant stabs; turn <b>VOWEL</b> while it plays.</p>
+        <h3>Ignition</h3>
+        <p>Turn the <b>KEY</b>. The dash lights, the sun comes up, and COUNTACH DRIFT plays. Space plays and stops. Everything you hear is synthesized in your browser: no sample files, no account, no server.</p>
+        <h3>The devices</h3>
+        <p><b>V12</b> is the drum machine. The step grid is one bar of the current pattern (BAR 1 / BAR 2 pages the rest): tap a cell to write a hit, tap a lane's name to hear it. Tune a lane by right-clicking its name (shift for down), rolling the wheel over it, or with <b>TUNE −/+</b> in the editor toolbar. <b>MEMPHIS</b> crushes the kit toward a dubbed cassette.</p>
+        <p><b>TRUNK</b> is the 808: <b>DRIVE</b> pushes it through a clipper until the plate rattles. In the editor, shift-click a note (or select it and press <b>SLIDE</b>) to glide into it. <b>LAZERBELL</b> is the cowbell hook; <b>STACK</b> piles detuned bells, <b>GRIT</b> distorts them. <b>TALKBOX</b> chants formant syllables; turn <b>VOWEL</b> while it plays.</p>
       </div>
       <div class="manual__col">
-        <h2>Chopping</h2>
-        <p>The <b>LATHE</b> cuts records. Drop any audio file on it, record the mic, or press <b>RESAMPLE SONG</b> to bounce the song itself (the loop if one is set, otherwise the first two bars). Cut by transients or evenly, drag cuts, click to add one, double-click to remove one, then <b>PRESS TO CAROUSEL</b>.</p>
-        <p>The <b>CAROUSEL</b> plays those slices: each slice is a 45 on the changer, and the tone arm drops on the one that fires. Shift-click a slice key to hear it reversed; in the editor shift-click a slice note, or select it and press <b>REVERSE</b>, to play it backwards.</p>
-        <h2>Screw</h2>
-        <p>The <b>SCREW</b> lever slows and pitches every device at once, the way a tape deck would. It is saved with the song.</p>
+        <h3>Chopping</h3>
+        <p>The <b>CHOP SHOP</b> cuts tape. Drop any audio file on it, record the mic, or press <b>RESAMPLE SONG</b> to bounce the track itself (the loop if one is set, otherwise the first two bars). Cut by transients or evenly, drag cuts, click to add one, double-click to remove one, then <b>LOAD TO DECK</b>.</p>
+        <p>The <b>TAPE DECK</b> plays those slices: the reels spin, the counter climbs, and each slice lights its own segment. Shift-click a slice key to hear it reversed; in the editor shift-click a slice note, or select it and press <b>REVERSE</b>.</p>
+        <h3>Screw</h3>
+        <p>The <b>SCREW</b> lever slows and pitches every device at once, the way a tape deck losing battery would. It is saved with the song.</p>
       </div>
       <div class="manual__col">
-        <h2>Arranging</h2>
-        <p>The editor at the bottom has two tabs. <b>PATTERN</b> is a piano roll (or a step grid for drums and slices); tap a cell to write, tap a note to select it, drag to move, drag its right edge to stretch. <b>SONG</b> lays pattern blocks across bars, one row per device. Grids wider than the screen scroll with the wheel, the chrome scrollbars, or a finger on the bar. <b>DETACH</b> floats the editor in its own window; it stays in sync. <b>HOW</b> lists every gesture.</p>
-        <h2>Saving</h2>
-        <p><b>SAVE .JSON</b> downloads the whole cabinet as one readable <code>.noise.json</code> file: tempo, every knob, every note, every block, and the carousel's audio as base64 WAV. <b>OPEN</b> or drag the file back to continue. <b>WAV</b> renders a mixdown. The cabinet also keeps an unsaved copy in this browser.</p>
-        <p class="manual__fine">Format spec: <a href="format.html">noise-song v1</a>. Source: <a href="https://github.com/patpadgett/noise.patpadgett.com">github.com/patpadgett/noise.patpadgett.com</a>. A Patrick Padgett project.</p>
+        <h3>Arranging</h3>
+        <p>The editor at the bottom has two tabs. <b>PATTERN</b> is a piano roll (or a step grid for drums and slices); tap a cell to write, tap a note to select, drag to move, drag its right edge to stretch. <b>SONG</b> lays pattern blocks across bars, one row per device. Wide grids scroll with the wheel, the scrollbar, or a finger. <b>DETACH</b> floats the editor in its own window; it stays in sync. <b>HOW</b> lists every gesture.</p>
+        <h3>Saving</h3>
+        <p><b>SAVE JSON</b> downloads the whole dash as one readable <code>.noise.json</code> file: tempo, every knob, every note, every block, and the deck's audio as base64 WAV. <b>OPEN</b> or drag the file back to continue. <b>WAV</b> renders a mixdown. An unsaved copy also stays in this browser.</p>
+        <p class="manual__fine">Format spec: <a href="format.html">noise-song v1</a>. Source: <a href="https://github.com/patpadgett/noise.patpadgett.com">github.com/patpadgett/noise.patpadgett.com</a>. Artwork generated in-house with Flux; provenance in <code>assets/art/PROVENANCE.md</code>. A Patrick Padgett project.</p>
       </div>
     </div>
   </section>
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<div class="dropzone" aria-hidden="true"><span>DROP A .noise.json TO OPEN IT · DROP AUDIO TO CUT IT ON THE LATHE</span></div>
+<div class="dropzone" aria-hidden="true"><span>DROP A .noise.json TO OPEN IT · DROP AUDIO TO CUT IT IN THE CHOP SHOP</span></div>
 
 <script type="module" src="js/app.js"></script>
 </body>
