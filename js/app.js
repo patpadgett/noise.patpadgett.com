@@ -87,8 +87,8 @@ class App {
     const file = el('div', 'filestrip');
     file.innerHTML = `
       <div class="title-strip title-strip--song">
-        <span class="title-strip__lbl">NOW PLAYING</span>
         <button class="title-strip__name" id="song-title" title="Rename song"></button>
+        <span class="title-strip__lbl">NOW PLAYING · PRESS THE TITLE TO RENAME</span>
       </div>
       <div class="filestrip__keys">
         <button class="pb pb--small" id="new">NEW</button>
@@ -970,7 +970,7 @@ class App {
     const count = Math.max(n, 1);
     const spacing = (w - pad * 2) / count;
     const rad = Math.max(16, Math.min(h * 0.3, spacing * 0.5, 70));
-    const railY = h - 36;
+    const railY = h - 44;
     const rowY = railY - 14 - rad;
     const xAt = (i) => pad + spacing * (i + 0.5);
     const target = active >= 0 ? xAt(active) : (this.carriageX ?? xAt(0));
