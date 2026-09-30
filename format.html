@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noise-song v1 — file format</title>
+<meta name="description" content="The open JSON song format NOISE saves and loads. Everything is plain JSON; audio rides inside as base64 WAV.">
+<link rel="icon" href="assets/coin.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<style>
+  .doc { max-width: 880px; margin: 0 auto; padding: 24px 18px 80px; }
+  .doc h1 { font-family: var(--display); font-size: 48px; letter-spacing: .06em; margin: 18px 0 6px; }
+  .doc h2 { font-family: var(--display); font-size: 26px; letter-spacing: .08em; margin: 34px 0 8px; }
+  .doc p, .doc li { color: rgba(241,230,200,.85); font-size: 14px; max-width: 70ch; }
+  .doc pre { background: #070605; color: var(--cream); padding: 14px 16px; border-radius: 6px; box-shadow: inset 0 0 0 1px #2a2420; overflow-x: auto; font-size: 12.5px; line-height: 1.5; }
+  .doc code { font-family: var(--hand); }
+  .doc table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .doc th, .doc td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #2a2420; vertical-align: top; }
+  .doc th { font-family: var(--display); letter-spacing: .1em; color: var(--bulb); font-weight: 400; }
+  .doc .back { display: inline-block; margin-top: 12px; }
+</style>
+</head>
+<body class="is-lit">
+<div class="doc">
+  <a class="pb pb--small back" href="./">← BACK TO THE CABINET</a>
+  <h1>noise-song v1</h1>
+  <p>NOISE saves a whole cabinet as one JSON file with the extension <code>.noise.json</code>. It is meant to be read by people and other programs, not only by NOISE. Nothing is compressed or obfuscated; audio is embedded as a base64 WAV data URI, which every browser can decode with <code>decodeAudioData</code>.</p>
+
+  <h2>Top level</h2>
+<pre>{
+  "format": "noise-song",        // required, identifies the file
+  "version": 1,
+  "title": "HEARSE RIDE AT 2 A.M.",
+  "author": "",
+  "bpm": 136,                    // 60–200
+  "swing": 0.08,                 // 0–0.5, fraction of a 16th added to odd 16ths
+  "screw": 0,                    // -7..+3 semitones; pitches and slows every device
+  "master": { "saturation": 0.4, "tone": 11000, "wow": 0.25, "hiss": 0.3, "level": 0.9 },
+  "devices": [ ... ],            // see below
+  "arrangement": { "bars": 16, "tracks": { "&lt;deviceId&gt;": [ block, ... ] } },
+  "meta": { "created": "...", "saved": "...", "app": "NOISE Select-O-Matic", "url": "https://noise.patpadgett.com" }
+}</pre>
+
+  <h2>Devices</h2>
+  <p>Each device has an <code>id</code>, a <code>type</code>, its knob values in <code>params</code>, a <code>muted</code> flag, and one or more <code>patterns</code>.</p>
+<pre>{
+  "id": "hearse",
+  "type": "hearse",              // breaker | hearse | cathedral | preacher | carousel
+  "params": { "decay": 0.9, "glide": 0.14, "coffin": 0.22, "tone": 900, "rumble": 0.35, "level": 0.9 },
+  "muted": false,
+  "patterns": [
+    { "id": "patA", "name": "A", "steps": 32,
+      "notes": [ { "s": 0, "n": 28, "l": 4, "v": 1 }, { "s": 14, "n": 28, "l": 2, "v": 1, "g": 1 } ] }
+  ]
+}</pre>
+  <table>
+    <tr><th>type</th><th>what <code>n</code> means</th><th>params</th></tr>
+    <tr><td>breaker</td><td>drum lane 0–7: KICK, SNARE, CLAP, HAT, OPEN HAT, RIM, TOM, CRASH</td><td>memphis, decay, level, tune[8] (semitones per lane)</td></tr>
+    <tr><td>hearse</td><td>MIDI note (24–48 shown). <code>g: 1</code> slides from the previous note</td><td>decay, glide, coffin, tone, rumble, level</td></tr>
+    <tr><td>cathedral</td><td>MIDI note (55–84 shown)</td><td>decay, bell, choir, nave, level</td></tr>
+    <tr><td>preacher</td><td>MIDI note (40–64 shown)</td><td>vowel (0–4: AH EH EE OH OO), throat, grit, sermon, tail, octave, level</td></tr>
+    <tr><td>carousel</td><td>slice index into <code>audio.slices</code>. <code>r: 1</code> plays it reversed</td><td>pitch, gate, tape, wobble, level</td></tr>
+  </table>
+
+  <h2>Notes</h2>
+  <table>
+    <tr><th>field</th><th>meaning</th></tr>
+    <tr><td><code>s</code></td><td>start step inside the pattern, 16 steps per bar</td></tr>
+    <tr><td><code>n</code></td><td>pitch, lane, or slice (see table above)</td></tr>
+    <tr><td><code>l</code></td><td>length in steps (≥ 1)</td></tr>
+    <tr><td><code>v</code></td><td>velocity 0–1</td></tr>
+    <tr><td><code>g</code></td><td>optional, HEARSE only: 1 = slide into this note</td></tr>
+    <tr><td><code>r</code></td><td>optional, CAROUSEL only: 1 = play the slice reversed</td></tr>
+  </table>
+
+  <h2>Carousel audio</h2>
+  <p>The carousel device carries its record inline. Slice boundaries are seconds into the WAV.</p>
+<pre>"audio": {
+  "name": "RESAMPLE BARS 1–2",
+  "origin": "lathe",             // baked | lathe | user | file
+  "sampleRate": 44100,
+  "duration": 3.53,
+  "slices": [ { "start": 0, "end": 0.44 }, { "start": 0.44, "end": 0.88 }, ... ],
+  "encoding": "wav/pcm16/base64",
+  "wav": "data:audio/wav;base64,UklGRi..."
+}</pre>
+  <p>WAV is PCM 16-bit, stereo when the source is stereo and under 12 seconds, otherwise mono to keep files small. A file with <code>"audio": null</code> asks NOISE to bake its built-in resample on load.</p>
+
+  <h2>Arrangement blocks</h2>
+<pre>{ "id": "blk1", "bar": 4, "bars": 8, "pat": "patA" }   // play pattern patA from bar 4 for 8 bars</pre>
+  <p>A pattern shorter than its block loops; a pattern longer than its block is cut off. Blocks on one track never overlap; NOISE trims or splits neighbours when you drop a new one.</p>
+
+  <h2>Slice files</h2>
+  <p>The LATHE's <b>EXPORT SLICES</b> writes a sibling format, <code>noise-slices</code> v1: the same <code>audio</code> object above at the top level, so the chop can be reused without the song around it.</p>
+
+  <h2>Reading it elsewhere</h2>
+  <p>To play the audio in any browser: strip the prefix up to the comma, base64-decode, and hand the bytes to <code>AudioContext.decodeAudioData</code>. To reconstruct timing: one step is <code>60 / (bpm × 2^(screw/12)) / 4</code> seconds; add <code>swing × step</code> to every odd step.</p>
+</div>
+</body>
+</html>
