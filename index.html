@@ -74,19 +74,19 @@
         <h2>Starting</h2>
         <p>Press <b>INSERT COIN</b>. The cabinet lights and the house record plays. Space plays and stops. Everything you hear is synthesized in the browser: there are no sample files, no account, no server.</p>
         <h2>The devices</h2>
-        <p><b>BREAKER</b> is the drum machine. The letter-and-number pushbuttons are the first bar of the current pattern: press one to write a hit. Right-click a pad to tune it up, shift-right-click to tune it down. <b>MEMPHIS</b> crushes it toward a fourth-generation cassette.</p>
-        <p><b>HEARSE</b> is the 808. Notes that overlap slide; in the editor, shift-click a note to mark it <i>SLIDE</i>. <b>COFFIN</b> is the drive. <b>COWBELL CATHEDRAL</b> plays the melody; <b>CHOIR</b> stacks detuned bells, <b>NAVE</b> is the hall. <b>PREACHER</b> sings formant stabs; turn <b>VOWEL</b> while it plays.</p>
+        <p><b>BREAKER</b> is the drum machine. The letter-and-number pushbuttons are one bar of the current pattern (BAR 1 / BAR 2 pages the rest): press one to write a hit, press a lane's name to hear it. To tune a lane: right-click its name (shift for down), roll the wheel over it, or use <b>TUNE −/+</b> in the editor's toolbar. <b>MEMPHIS</b> crushes it toward a fourth-generation cassette.</p>
+        <p><b>HEARSE</b> is the 808. In the editor, shift-click a note (or select it and press <b>SLIDE</b> in the toolbar) to glide into it from the note before. <b>COFFIN</b> is the drive. <b>COWBELL CATHEDRAL</b> plays the melody; <b>CHOIR</b> stacks detuned bells, <b>NAVE</b> is the hall. <b>PREACHER</b> sings formant stabs; turn <b>VOWEL</b> while it plays.</p>
       </div>
       <div class="manual__col">
         <h2>Chopping</h2>
         <p>The <b>LATHE</b> cuts records. Drop any audio file on it, record the mic, or press <b>RESAMPLE SONG</b> to bounce the song itself (the loop if one is set, otherwise the first two bars). Cut by transients or evenly, drag cuts, click to add one, double-click to remove one, then <b>PRESS TO CAROUSEL</b>.</p>
-        <p>The <b>CAROUSEL</b> plays those slices: each slice is a 45 on the changer, and the tone arm swings to the one that fires. Shift-click a slice key to hear it reversed; in the editor shift-click a slice note to mark it <i>REV</i>.</p>
+        <p>The <b>CAROUSEL</b> plays those slices: each slice is a 45 on the changer, and the tone arm drops on the one that fires. Shift-click a slice key to hear it reversed; in the editor shift-click a slice note, or select it and press <b>REVERSE</b>, to play it backwards.</p>
         <h2>Screw</h2>
         <p>The <b>SCREW</b> lever slows and pitches every device at once, the way a tape deck would. It is saved with the song.</p>
       </div>
       <div class="manual__col">
         <h2>Arranging</h2>
-        <p>The editor at the bottom has two tabs. <b>PATTERN</b> is a piano roll (or a step grid for drums and slices). <b>SONG</b> lays pattern blocks across bars, one row per device. <b>DETACH</b> floats the editor in its own window; it stays in sync.</p>
+        <p>The editor at the bottom has two tabs. <b>PATTERN</b> is a piano roll (or a step grid for drums and slices); tap a cell to write, tap a note to select it, drag to move, drag its right edge to stretch. <b>SONG</b> lays pattern blocks across bars, one row per device. Grids wider than the screen scroll with the wheel, the chrome scrollbars, or a finger on the bar. <b>DETACH</b> floats the editor in its own window; it stays in sync. <b>HOW</b> lists every gesture.</p>
         <h2>Saving</h2>
         <p><b>SAVE .JSON</b> downloads the whole cabinet as one readable <code>.noise.json</code> file: tempo, every knob, every note, every block, and the carousel's audio as base64 WAV. <b>OPEN</b> or drag the file back to continue. <b>WAV</b> renders a mixdown. The cabinet also keeps an unsaved copy in this browser.</p>
         <p class="manual__fine">Format spec: <a href="format.html">noise-song v1</a>. Source: <a href="https://github.com/patpadgett/noise.patpadgett.com">github.com/patpadgett/noise.patpadgett.com</a>. A Patrick Padgett project.</p>

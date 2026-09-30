@@ -40,20 +40,27 @@ export class Editor {
           <button class="tab is-on" role="tab" data-mode="pattern" aria-selected="true">PATTERN</button>
           <button class="tab" role="tab" data-mode="song" aria-selected="false">SONG</button>
         </div>
+        <div class="editor__right">
+          <button class="pb pb--small js-help" aria-haspopup="dialog">HOW</button>
+          <button class="pb pb--small js-detach">${this.detached ? 'RETURN' : 'DETACH ⇗'}</button>
+        </div>
         <div class="editor__ctl editor__ctl--pattern">
           <label class="strip-select"><span>DEVICE</span><select class="js-device" aria-label="Device"></select></label>
           <div class="patstrips" role="group" aria-label="Patterns"></div>
           <label class="strip-select"><span>STEPS</span><select class="js-steps" aria-label="Pattern length"><option>16</option><option selected>32</option><option>64</option></select></label>
           <label class="strip-select"><span>PEN</span><select class="js-pen" aria-label="Pen length in steps"><option value="1">1/16</option><option value="2">1/8</option><option value="4">1/4</option><option value="8">1/2</option><option value="16">BAR</option></select></label>
           <button class="pb pb--small js-clear" title="Clear all notes in this pattern">CLEAR</button>
+          <div class="notetools" hidden>
+            <span class="notetools__lbl js-nt-lbl"></span>
+            <button class="pb pb--small js-nt-flag" aria-pressed="false" hidden>SLIDE</button>
+            <button class="pb pb--small js-nt-tune" data-dir="-1" hidden aria-label="Tune lane down">TUNE −</button>
+            <button class="pb pb--small js-nt-tune" data-dir="1" hidden aria-label="Tune lane up">TUNE +</button>
+            <button class="pb pb--small js-nt-del" hidden>DELETE</button>
+          </div>
         </div>
         <div class="editor__ctl editor__ctl--song" hidden>
           <label class="strip-select"><span>BARS</span><select class="js-bars" aria-label="Song length in bars">${[4, 8, 12, 16, 24, 32, 48, 64].map((b) => `<option>${b}</option>`).join('')}</select></label>
           <span class="editor__hint">Drag on empty space to lay a block · double-click a block to change its pattern · drag the ruler to loop</span>
-        </div>
-        <div class="editor__right">
-          <button class="pb pb--small js-help" aria-haspopup="dialog">HOW</button>
-          <button class="pb pb--small js-detach">${this.detached ? 'RETURN' : 'DETACH ⇗'}</button>
         </div>
       </div>
       <div class="editor__wrap">
@@ -77,6 +84,41 @@ export class Editor {
     this.help = this.root.querySelector('.editor__help');
     this.ctlPattern = this.root.querySelector('.editor__ctl--pattern');
     this.ctlSong = this.root.querySelector('.editor__ctl--song');
+    this.nt = { box: this.root.querySelector('.notetools'), lbl: this.root.querySelector('.js-nt-lbl'), flag: this.root.querySelector('.js-nt-flag'), tune: [...this.root.querySelectorAll('.js-nt-tune')], del: this.root.querySelector('.js-nt-del') };
+  }
+  // touch-friendly equivalents of shift-click (slide/reverse) and right-click (tune)
+  selectedNote() {
+    const pat = this.pattern();
+    if (!pat) return null;
+    if (this.sel && typeof this.sel === 'object') return pat.notes.find((x) => x.s === this.sel.s && x.n === this.sel.n) || null;
+    return null;
+  }
+  updateNoteTools() {
+    const nt = this.nt;
+    if (!nt) return;
+    const dev = this.device();
+    const T = DEVICE_TYPES[dev.type];
+    const inPattern = this.mode === 'pattern';
+    nt.box.hidden = !inPattern;
+    if (!inPattern) return;
+    const note = this.selectedNote();
+    const row = this.geom?.rows[this.cursor.row];
+    if (T.kind === 'drums') {
+      const lane = note ? note.n : row?.n ?? 0;
+      const t = (dev.params.tune || [])[lane] || 0;
+      nt.lbl.textContent = `${T.lanes[lane]} · ${t > 0 ? '+' : ''}${t} st`;
+      nt.tune.forEach((b) => { b.hidden = false; });
+      nt.flag.hidden = true;
+      nt.del.hidden = !note;
+      return;
+    }
+    nt.tune.forEach((b) => { b.hidden = true; });
+    if (!note) { nt.lbl.textContent = 'TAP A NOTE'; nt.flag.hidden = true; nt.del.hidden = true; return; }
+    nt.lbl.textContent = T.kind === 'slices' ? `SLICE ${String(note.n + 1).padStart(2, '0')} · STEP ${note.s + 1}` : `${noteName(note.n)} · STEP ${note.s + 1}`;
+    const flagKey = dev.type === 'hearse' ? 'g' : dev.type === 'carousel' ? 'r' : null;
+    nt.flag.hidden = !flagKey;
+    if (flagKey) { nt.flag.textContent = flagKey === 'g' ? 'SLIDE' : 'REVERSE'; nt.flag.setAttribute('aria-pressed', !!note[flagKey]); nt.flag.classList.toggle('is-on', !!note[flagKey]); }
+    nt.del.hidden = false;
   }
 
   bind() {
@@ -91,6 +133,27 @@ export class Editor {
     this.root.querySelector('.js-help').addEventListener('click', () => { this.help.hidden = !this.help.hidden; });
     this.root.querySelector('.js-help-close').addEventListener('click', () => { this.help.hidden = true; });
     this.root.querySelector('.js-detach').addEventListener('click', () => this.bus.detach?.());
+    this.nt.flag.addEventListener('click', () => {
+      const note = this.selectedNote(); const dev = this.device();
+      const flag = dev.type === 'hearse' ? 'g' : dev.type === 'carousel' ? 'r' : null;
+      if (!note || !flag) return;
+      this.bus.dispatch({ type: 'updateNote', deviceId: this.deviceId, patId: this.patId, s: note.s, n: note.n, changes: { [flag]: note[flag] ? 0 : 1 } });
+      this.updateNoteTools();
+    });
+    this.nt.tune.forEach((b) => b.addEventListener('click', () => {
+      const dev = this.device(); if (DEVICE_TYPES[dev.type].kind !== 'drums') return;
+      const note = this.selectedNote(); const lane = note ? note.n : this.geom.rows[this.cursor.row]?.n ?? 0;
+      const tune = [...(dev.params.tune || [0, 0, 0, 0, 0, 0, 0, 0])];
+      tune[lane] = Math.max(-12, Math.min(12, tune[lane] + (+b.dataset.dir)));
+      this.bus.dispatch({ type: 'setParam', deviceId: this.deviceId, param: 'tune', value: tune });
+      this.bus.audition(this.deviceId, lane);
+      this.updateNoteTools();
+    }));
+    this.nt.del.addEventListener('click', () => {
+      const note = this.selectedNote(); if (!note) return;
+      this.bus.dispatch({ type: 'removeNote', deviceId: this.deviceId, patId: this.patId, s: note.s, n: note.n });
+      this.sel = null; this.updateNoteTools();
+    });
     this.patStrips.addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -105,6 +168,8 @@ export class Editor {
     });
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => this.onDown(e));
+    c.addEventListener('pointerup', () => this.updateNoteTools());
+    c.addEventListener('keyup', () => this.updateNoteTools());
     c.addEventListener('pointermove', (e) => this.onMove(e));
     c.addEventListener('pointerup', (e) => this.onUp(e));
     c.addEventListener('pointercancel', (e) => this.onUp(e));
@@ -116,7 +181,7 @@ export class Editor {
       this.clampScroll();
     }, { passive: false });
     c.addEventListener('keydown', (e) => this.onKey(e));
-    this.bus.on('song', () => this.syncFromSong());
+    this.bus.on('song', () => { this.syncFromSong(); this.updateNoteTools(); });
   }
 
   setMode(m) {
@@ -181,6 +246,7 @@ export class Editor {
     }
     if (cur !== this.deviceId) this.scroll.y = 0;
     this.resize();
+    this.updateNoteTools();
   }
 
   // ---------- geometry ----------
@@ -209,19 +275,23 @@ export class Editor {
       const kind = DEVICE_TYPES[dev.type].kind;
       const velH = 46;
       const availW = this.w - labelW;
+      const sb = touch ? 18 : 12;
       const cellW = Math.max(touch ? 34 : (kind === 'drums' ? 22 : 16), Math.floor(availW / steps));
-      const availH = this.h - rulerH - velH;
+      const hbar = cellW * steps > availW ? sb : 0;
+      const availH = this.h - rulerH - velH - hbar;
       const rowH = kind === 'drums' ? Math.max(touch ? 36 : 22, Math.floor(availH / rows.length)) : (kind === 'slices' ? Math.max(touch ? 34 : 20, Math.min(30, Math.floor(availH / rows.length))) : (touch ? 28 : 18));
-      return { labelW, rulerH, velH, cellW, rowH, steps, rows, kind, gridW: cellW * steps, gridH: rowH * rows.length, viewW: availW, viewH: availH };
+      return { labelW, rulerH, velH, cellW, rowH, steps, rows, kind, touch, sb, hbar, gridW: cellW * steps, gridH: rowH * rows.length, viewW: availW, viewH: availH };
     }
     const song = this.song();
     const bars = Math.max(song.arrangement.bars + 2, 8);
     const rows = song.devices.map((d) => ({ id: d.id, label: DEVICE_TYPES[d.type].name, color: DEVICE_TYPES[d.type].color, dev: d }));
     const availW = this.w - labelW;
+    const sb = touch ? 18 : 12;
     const cellW = Math.max(touch ? 44 : 30, Math.floor(availW / bars));
-    const availH = this.h - rulerH;
+    const hbar = cellW * bars > availW ? sb : 0;
+    const availH = this.h - rulerH - hbar;
     const rowH = Math.max(touch ? 48 : 34, Math.floor(availH / rows.length));
-    return { labelW, rulerH, velH: 0, cellW, rowH, bars, rows, gridW: cellW * bars, gridH: rowH * rows.length, viewW: availW, viewH: availH };
+    return { labelW, rulerH, velH: 0, cellW, rowH, bars, rows, touch, sb, hbar, gridW: cellW * bars, gridH: rowH * rows.length, viewW: availW, viewH: availH };
   }
   clampScroll() {
     const g = this.geom;
@@ -239,8 +309,12 @@ export class Editor {
     const inVel = this.mode === 'pattern' && y >= this.h - g.velH && x >= g.labelW;
     const col = Math.floor(gx / g.cellW);
     const row = Math.floor(gy / g.rowH);
-    const inGrid = x >= g.labelW && y >= g.rulerH && !inVel && col >= 0 && row >= 0 && row < g.rows.length && col < (this.mode === 'pattern' ? g.steps : g.bars);
-    return { x, y, gx, gy, col, row, inRuler, inLabels, inVel, inGrid, fracX: (gx % g.cellW) / g.cellW };
+    const sb = g.sb;
+    const gridBottom = g.rulerH + g.viewH;
+    const inVScroll = g.gridH > g.viewH && x >= this.w - sb && y >= g.rulerH && y < gridBottom;
+    const inHScroll = g.hbar > 0 && y >= gridBottom && y < gridBottom + g.hbar && x >= g.labelW && !inVScroll;
+    const inGrid = !inVScroll && !inHScroll && x >= g.labelW && y >= g.rulerH && !inVel && col >= 0 && row >= 0 && row < g.rows.length && col < (this.mode === 'pattern' ? g.steps : g.bars);
+    return { x, y, gx, gy, col, row, inRuler, inLabels, inVel, inGrid, inVScroll, inHScroll, fracX: (gx % g.cellW) / g.cellW };
   }
   noteAt(col, rowIdx) {
     const pat = this.pattern();
@@ -261,6 +335,10 @@ export class Editor {
     const h = this.hit(e);
     const g = this.geom;
     this.canvas.setPointerCapture(e.pointerId);
+    if (h.inVScroll || h.inHScroll) {
+      this.drag = { kind: h.inVScroll ? 'vscroll' : 'hscroll', startX: h.x, startY: h.y, sx: this.scroll.x, sy: this.scroll.y };
+      return;
+    }
     if (h.inRuler) {
       const col = Math.floor((h.x - g.labelW + this.scroll.x) / g.cellW);
       if (this.mode === 'song') this.drag = { kind: 'loop', start: col, end: col, moved: false };
@@ -330,6 +408,8 @@ export class Editor {
       return;
     }
     switch (d.kind) {
+      case 'vscroll': this.scroll.y = d.sy + (h.y - d.startY) * (g.gridH / g.viewH); this.clampScroll(); break;
+      case 'hscroll': this.scroll.x = d.sx + (h.x - d.startX) * (g.gridW / g.viewW); this.clampScroll(); break;
       case 'paint': {
         if (g.kind !== 'drums' || !h.inGrid || h.row !== d.row) return;
         if (h.col !== d.last) {
@@ -539,6 +619,7 @@ export class Editor {
     c.fillRect(0, 0, this.w, this.h);
     const step = this.bus.currentStep?.() ?? -1;
     if (this.mode === 'pattern') this.drawPattern(c, g, C, song, step); else this.drawSong(c, g, C, song, step);
+    this.drawScrollbars(c, g, C);
     // focus ring on cursor when canvas focused
     if (document.activeElement === this.canvas) {
       const x = g.labelW + this.cursor.s * g.cellW - this.scroll.x, y = g.rulerH + this.cursor.row * g.rowH - this.scroll.y;
@@ -546,6 +627,26 @@ export class Editor {
       c.strokeStyle = C.bulb; c.lineWidth = 2; c.setLineDash([3, 3]);
       c.strokeRect(x + 1, y + 1, g.cellW - 2, g.rowH - 2);
       c.restore();
+    }
+  }
+  drawScrollbars(c, g, C) {
+    const sb = g.sb, pad = 3;
+    const gridBottom = g.rulerH + g.viewH;
+    if (g.hbar > 0) {
+      const trackX = g.labelW, trackW = g.viewW - (g.gridH > g.viewH ? sb : 0);
+      const thumbW = Math.max(28, trackW * (g.viewW / g.gridW));
+      const thumbX = trackX + (this.scroll.x / (g.gridW - g.viewW)) * (trackW - thumbW);
+      c.fillStyle = C.panel; c.fillRect(0, gridBottom, this.w, g.hbar);
+      c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(trackX, gridBottom + 1, trackW, g.hbar - 2);
+      c.fillStyle = '#8a8985'; roundRect(c, thumbX, gridBottom + pad, thumbW, g.hbar - pad * 2, 3); c.fill();
+      c.fillStyle = '#d8d7d2'; c.fillRect(thumbX + 2, gridBottom + pad + 1, thumbW - 4, 1);
+    }
+    if (g.gridH > g.viewH) {
+      const trackY = g.rulerH, trackH = g.viewH - (g.gridW > g.viewW ? sb : 0);
+      const thumbH = Math.max(28, trackH * (g.viewH / g.gridH));
+      const thumbY = trackY + (this.scroll.y / (g.gridH - g.viewH)) * (trackH - thumbH);
+      c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(this.w - sb, trackY, sb, trackH);
+      c.fillStyle = '#8a8985'; roundRect(c, this.w - sb + pad, thumbY, sb - pad * 2, thumbH, 3); c.fill();
     }
   }
   drawPattern(c, g, C, song, absStep) {
@@ -666,7 +767,7 @@ export class Editor {
       c.fillStyle = row.black ? 'rgba(241,230,200,.7)' : C.ink;
       c.font = `${g.kind === 'melodic' ? 500 : 500} ${Math.min(12, g.rowH - 6)}px "Special Elite", "Courier New", monospace`;
       c.textAlign = 'left'; c.textBaseline = 'middle';
-      c.fillText(row.label, 12, y + g.rowH / 2 + 1);
+      c.fillText(g.touch && row.label === 'OPEN HAT' ? 'O.HAT' : row.label, 12, y + g.rowH / 2 + 1);
       if (isC || g.kind !== 'melodic') { c.fillStyle = accent; c.fillRect(g.labelW - 10, y + 3, 2, g.rowH - 6); }
     }
     c.restore();

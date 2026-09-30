@@ -182,6 +182,8 @@ class App {
       e.preventDefault(); this.tuneLane(dev, +pad.dataset.lane, e.shiftKey ? -1 : 1);
     });
     sel.addEventListener('click', (e) => {
+      const nd = e.target.closest('.js-nudge');
+      if (nd) { const sc = $('.selector__scroll', sel); sc.scrollBy({ left: +nd.dataset.dir * 4 * 44, behavior: 'smooth' }); return; }
       const pg = e.target.closest('.selector__page'); if (!pg) return;
       this.selPage = +pg.dataset.page; this.selHold = performance.now(); this.drawSelector(dev);
     });
@@ -216,7 +218,8 @@ class App {
       return `<div class="selector__row" role="row">${cells}</div>`;
     }).join('');
     const pageHtml = pages > 1 ? `<div class="selector__pages" role="tablist" aria-label="Pattern page">${Array.from({ length: pages }, (_, p) => `<button class="selector__page ${p === this.selPage ? 'is-on' : ''}" role="tab" data-page="${p}" aria-selected="${p === this.selPage}">BAR ${p + 1}</button>`).join('')}<span class="selector__pat">${pat?.name || 'A'} · ${pat?.steps || 16} STEPS · PRESS A NAME TO HIT IT · RIGHT-CLICK TO TUNE</span></div>` : `<div class="selector__pages"><span class="selector__pat">${pat?.name || 'A'} · ${pat?.steps || 16} STEPS · PRESS A NAME TO HIT IT · RIGHT-CLICK TO TUNE</span></div>`;
-    sel.innerHTML = `<div class="selector__lanes" role="rowgroup">${laneHtml}</div><div class="selector__scroll" role="rowgroup">${rowsHtml}</div>` + pageHtml;
+    const nudge = `<span class="selector__nudge"><button class="pb pb--small js-nudge" data-dir="-1" aria-label="Scroll steps left"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button><button class="pb pb--small js-nudge" data-dir="1" aria-label="Scroll steps right"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></span>`;
+    sel.innerHTML = `<div class="selector__lanes" role="rowgroup">${laneHtml}</div><div class="selector__scroll" role="rowgroup">${rowsHtml}</div>` + pageHtml.replace('</div>', nudge + '</div>');
     return;
     sel.innerHTML = rowsHtml + pageHtml;
   }
@@ -486,7 +489,7 @@ class App {
     this.history.snapshot(this.song);
     this.dirty = true;
     if (refreshUI) this.refreshUI(op);
-    if (op.type.includes('Note') || op.type === 'clearPattern' || op.type === 'setPatternSteps') { const dev = findDevice(this.song, 'breaker'); if (op.deviceId === dev.id) this.drawSelector(dev); }
+    if (op.type.includes('Note') || op.type === 'clearPattern' || op.type === 'setPatternSteps' || (op.type === 'setParam' && op.param === 'tune')) { const dev = findDevice(this.song, 'breaker'); if (op.deviceId === dev.id) this.drawSelector(dev); }
     if (op.type.startsWith('add') || op.type.startsWith('remove') || op.type === 'rename' || op.type === 'setBars' || op.type === 'setPatternSteps' || op.type === 'addPattern' || op.type === 'removePattern' || op.type === 'renamePattern') this.editor.syncFromSong();
     this.broadcast();
     clearTimeout(this._as);
@@ -893,7 +896,6 @@ class App {
       const local = this.selectorLocalStep(step);
       if (local >= 0) {
         const page = Math.floor(local / 16);
-        if (page !== this.selPage && (!this.selHold || performance.now() - this.selHold > 4000)) { this.selPage = page; this.drawSelector(findDevice(this.song, 'breaker')); }
         $$('.selector__page', sel).forEach((b) => b.classList.toggle('is-playing', +b.dataset.page === page));
         if (page === this.selPage) $$(`.sel[data-col="${local % 16}"]`, sel).forEach((b) => b.classList.add('is-now'));
       }
@@ -968,7 +970,7 @@ class App {
     const count = Math.max(n, 1);
     const spacing = (w - pad * 2) / count;
     const rad = Math.max(16, Math.min(h * 0.3, spacing * 0.5, 70));
-    const railY = h - 28;
+    const railY = h - 36;
     const rowY = railY - 14 - rad;
     const xAt = (i) => pad + spacing * (i + 0.5);
     const target = active >= 0 ? xAt(active) : (this.carriageX ?? xAt(0));
@@ -992,7 +994,7 @@ class App {
       if (i === active) continue;
       if (n) drawRecord(xAt(i), rowY, rad, 0.46, i, 0.35, false);
       c.fillStyle = 'rgba(241,230,200,.7)'; c.font = `700 ${Math.max(10, Math.min(13, spacing * 0.3))}px "League Gothic", Impact, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'top';
-      if (n) c.fillText(String(i + 1).padStart(2, '0'), xAt(i), railY + 12);
+      if (n) c.fillText(String(i + 1).padStart(2, '0'), xAt(i), railY + 16);
     }
     // carriage
     c.fillStyle = '#b8b6ae'; c.fillRect(this.carriageX - 14, railY - 6, 28, 14);
@@ -1003,7 +1005,7 @@ class App {
     if (active >= 0 && n) {
       drawRecord(xAt(active), activeY, rad * 1.3, 1, active, this.carouselAngle, true);
       c.fillStyle = 'rgba(241,230,200,.9)'; c.font = `700 ${Math.max(10, Math.min(13, spacing * 0.3))}px "League Gothic", Impact, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'top';
-      c.fillText(String(active + 1).padStart(2, '0'), xAt(active), railY + 12);
+      c.fillText(String(active + 1).padStart(2, '0'), xAt(active), railY + 16);
     }
     // tone arm: pivot post at top-left; rests on its post when idle, drops onto the active record
     const ax = w * 0.05, ay = h * 0.14;

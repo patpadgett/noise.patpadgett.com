@@ -42,7 +42,7 @@ await page.locator('#screw input').fill('-4');
 await page.locator('#screw input').dispatchEvent('input');
 console.log('screw bpm:', await page.evaluate(() => Math.round(window.noise.engine.effectiveBpm())));
 await page.click('#lathe-resample');
-await page.waitForFunction(() => window.noise.lathe.buffer, null, { timeout: 30000 });
+await page.waitForFunction(() => window.noise.lathe.name.startsWith('RESAMPLE BARS'), null, { timeout: 30000 });
 console.log('lathe:', await page.evaluate(() => ({ dur: window.noise.lathe.buffer.duration.toFixed(2), cuts: window.noise.lathe.slices.length, name: window.noise.lathe.name })));
 await page.click('#lathe-commit');
 await page.waitForTimeout(300);
