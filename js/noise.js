@@ -1,7 +1,7 @@
 // NOISE — one screen. Drop a song, it comes back phonk.
 
 import { Phonker, PRESETS } from './phonker.js';
-import { parseLink, spotifyMeta, youtubeMeta, TabRecorder, MicRecorder, monoOf } from './input.js';
+import { parseLink, spotifyMeta, youtubeMeta, TabRecorder, MicRecorder, monoOf, measure } from './input.js';
 import { encodeWav, encodeMp3, renderVideo, download, safeName } from './export.js';
 import { NOTE_NAMES, ignition } from './kit.js';
 
@@ -159,11 +159,15 @@ class App {
     $('#landed-title').textContent = m.title;
     await this.loadYTApi();
     this.teardownYT();
-    $('#yt-hint').innerHTML = canCapture ? 'Press <b>PHONK IT</b>, then in the browser\'s dialog choose <b>this tab</b> and tick <b>Share tab audio</b>. The video plays through once while NOISE records it, then the phonk version is built.' : $('#yt-hint').innerHTML;
-    $('#yt-go').disabled = false;
+    $('#yt-hint').innerHTML = canCapture ? 'Press <b>PHONK IT</b>. In the browser\'s dialog pick <b>this tab</b> and tick <b>Share tab audio</b>. NOISE records the video as it plays — a 4-minute video takes 4 minutes — then builds the phonk version. Press STOP RECORDING any time to use what it has.' : $('#yt-hint').innerHTML;
+    $('#yt-go').disabled = true; $('#yt-go').textContent = 'LOADING VIDEO…';
     this.yt = new YT.Player('yt-player', { videoId: link.id, width: '100%', height: '100%', playerVars: { rel: 0, modestbranding: 1, playsinline: 1, controls: 1, origin: location.origin },
       events: {
-        onStateChange: (e) => { if (e.data === YT.PlayerState.ENDED && this.capturing) this.stopCapture(); },
+        onReady: () => { if (canCapture) { $('#yt-go').disabled = false; $('#yt-go').textContent = 'PHONK IT'; } },
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.ENDED && this.capturing) this.stopCapture();
+          if (e.data === YT.PlayerState.PLAYING) this.ytPlaying = true;
+        },
         onError: (e) => {
           // 101/150 = owner disallows embedding; 100 = removed/private; 2/5 = bad id or player error
           const why = (e.data === 101 || e.data === 150) ? 'The owner of this video does not allow it to play on other sites' : e.data === 100 ? 'That video is private or removed' : 'YouTube could not load that video';
@@ -179,7 +183,7 @@ class App {
   }
   teardownYT() {
     try { this.yt?.destroy(); } catch (e) {}
-    this.yt = null;
+    this.yt = null; this.ytPlaying = false;
     if (!$('#yt-player')) { const d = document.createElement('div'); d.id = 'yt-player'; $('.yt__frame').appendChild(d); }
   }
   async captureYouTube() {
@@ -189,12 +193,20 @@ class App {
     catch (err) { return this.toast(err.message, true); }
     this.recorder = rec; this.capturing = true;
     rec.onended = () => { if (this.capturing) this.stopCapture(); };
+    this.ytPlaying = false;
     try { this.yt.seekTo(0, true); this.yt.setVolume(100); this.yt.unMute(); this.yt.playVideo(); } catch (e) {}
     const dur = (() => { try { return this.yt.getDuration() || 0; } catch (e) { return 0; } })();
-    this.work('RECORDING THE VIDEO…', dur ? `${Math.round(dur)}s to go — keep this tab open` : 'keep this tab open', 0);
+    this.work('RECORDING THE VIDEO…', 'starting the video…', 0);
     $('#level').hidden = false; $('#work-stop').hidden = false;
     const t0 = performance.now();
-    this.capTimer = setInterval(() => { const el = (performance.now() - t0) / 1000; if (dur) this.work(null, `${Math.max(0, Math.round(dur - el))}s to go — keep this tab open`, Math.min(0.98, el / dur)); else this.work(null, `${Math.round(el)}s recorded`, 0); }, 500);
+    this.capTimer = setInterval(() => {
+      const el = (performance.now() - t0) / 1000;
+      const playing = (() => { try { return this.yt.getPlayerState() === 1; } catch (e) { return this.ytPlaying; } })();
+      if (!playing && el > 6) { this.work(null, 'The video is not playing. Go back and press play on it, then PHONK IT again.', 0); return; }
+      const quiet = el > 8 && rec.peak < 0.01;
+      const left = dur ? `${Math.max(0, Math.round(dur - el))}s to go` : `${Math.round(el)}s recorded`;
+      this.work(null, quiet ? `${left} — hearing nothing yet: did you tick "Share tab audio"?` : `${left} — keep this tab open`, dur ? Math.min(0.98, el / dur) : 0);
+    }, 500);
   }
   level(v) { const i = $('#level i'); if (i) i.style.transform = `scaleX(${Math.min(1, v * 6)})`; }
   async stopCapture() {
@@ -202,8 +214,14 @@ class App {
     this.capturing = false; clearInterval(this.capTimer);
     $('#level').hidden = true; $('#work-stop').hidden = true;
     try { this.yt?.pauseVideo(); } catch (e) {}
-    const buf = this.recorder.stop(); this.recorder = null;
-    if (buf.duration < 4) { this.toast('Recorded less than 4 seconds. Try again and let it play.', true); this.show(this.yt ? 'landed' : 'intake'); return; }
+    const rec = this.recorder; this.recorder = null;
+    this.work(null, 'finishing the recording…', 0.99);
+    let buf;
+    try { buf = await rec.stop(); } catch (err) { this.toast('Recording failed: ' + err.message, true); return this.show(this.yt ? 'landed' : 'intake'); }
+    if (buf.duration < 4) { this.toast('Recorded less than 4 seconds. Try again and let it play.', true); return this.show(this.yt ? 'landed' : 'intake'); }
+    const m = measure(buf);
+    if (m.peak < 0.01) { this.toast('That recording is silent. Pick THIS TAB in the share dialog and tick "Share tab audio" (or let the video play unmuted).', true); return this.show(this.yt ? 'landed' : 'intake'); }
+    console.info(`NOISE recorded ${buf.duration.toFixed(1)}s, peak ${(20 * Math.log10(m.peak)).toFixed(1)} dBFS, rms ${(20 * Math.log10(m.rms || 1e-6)).toFixed(1)} dBFS`);
     await this.phonkify(buf);
   }
   async recordRoom() {
@@ -226,7 +244,13 @@ class App {
 
   // ---------- the whole point ----------
   async phonkify(buffer) {
+    try { await this._phonkify(buffer); }
+    catch (err) { console.error(err); this.toast('Something broke while building the phonk version: ' + err.message, true); this.show('intake'); }
+  }
+  async _phonkify(buffer) {
     if (buffer.duration > 12 * 60) { this.toast('That is over 12 minutes. Trim it first.', true); return this.show('intake'); }
+    const m = measure(buffer);
+    if (m.peak < 0.01) { this.toast('That audio is silent — nothing to phonk.', true); return this.show('intake'); }
     this.work('LISTENING…', 'finding the beat and the key', 0.1);
     const pcm = monoOf(buffer);
     const analysis = await this.analyze(pcm, buffer.sampleRate, (p) => this.work(null, p < 0.7 ? 'finding the beat' : p < 0.9 ? 'locking the grid' : 'reading the key', 0.1 + p * 0.8));
@@ -240,7 +264,16 @@ class App {
     this.work('BUILDING THE PHONK VERSION', 'drums, 808, cowbell, tape', 0.97);
     await new Promise((r) => setTimeout(r, 250));
     this.show('deck');
-    try { ignition(this.ph.ctx, this.ph.ctx.destination); } catch (e) {}
+    // the deck is reached from a click (file/link/try) so the context is normally running; if the
+    // browser still has it suspended, the big play button is the way in and we say so
+    const ctx = this.ph.ensure();
+    if (ctx.state !== 'running') {
+      this.toast('Press play to hear it.');
+      const kick = () => { ctx.resume().then(() => { if (!this.ph.playing) this.ph.play(0); }); document.removeEventListener('pointerdown', kick); };
+      document.addEventListener('pointerdown', kick);
+      return;
+    }
+    try { ignition(ctx, ctx.destination); } catch (e) {}
     setTimeout(() => this.ph.play(0), 900);
   }
   analyze(pcm, sampleRate, progress) {

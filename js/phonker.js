@@ -85,7 +85,8 @@ export function arrange(analysis, params, seed = 7) {
       E(b[2], 'bass', { n: bassLow + 7, v: 0.8, dur: beatSec * 2, slide: false });
     }
     // --- cowbell hook: constant 8ths on a 2-bar motif in the song's key ---
-    if (inDrop || i === dropBar - 1) {
+    const bellOn = (inDrop && (Math.floor((i - dropBar) / 4) % 2 === 1 || (i - dropBar) % 8 === 7)) || i === dropBar - 1; // the hook answers the song: in for 4 bars, out for 4
+    if (bellOn) {
       const motifA = [0, 0, 3, 0, 7, 3, 1, 0], motifB = [0, 0, 3, 0, 10, 7, 3, 1];
       const motif = (Math.floor((i - dropBar) / 2) % 2 === 0) ? motifA : motifB;
       const scaleFix = (d) => (!minor && d === 3) ? 4 : (!minor && d === 10) ? 11 : (!minor && d === 1) ? 2 : d;
@@ -135,6 +136,12 @@ export class Phonker {
   load(buffer, analysis) {
     this.stop();
     this.source = buffer; this.analysis = analysis;
+    // loudness-normalise the song: aim its loud-part RMS at -14 dBFS so the kit balance is the same for a 1920 78 and a 2024 master
+    const d = buffer.getChannelData(0), n = d.length, win = Math.floor(buffer.sampleRate * 0.4), rms = [];
+    for (let i = 0; i + win <= n; i += win) { let s = 0; for (let k = i; k < i + win; k += 4) s += d[k] * d[k]; rms.push(Math.sqrt(s / (win / 4))); }
+    rms.sort((a, b) => a - b);
+    const loud = rms[Math.floor(rms.length * 0.9)] || 0.1; // 90th percentile = the loud parts
+    this.srcGain = clamp(0.2 / loud, 0.5, 6);
     this.arr = arrange(analysis, this.params, this.seed = 7);
   }
   setParam(k, v) {
@@ -149,25 +156,27 @@ export class Phonker {
   // build the graph on any context; returns the handles the scheduler needs
   buildGraph(ctx, dest) {
     const tape = new Tape(ctx, dest, { saturation: 0.55, tone: 9000, wow: 0.18, hiss: 0.3, level: 1 });
-    const sum = ctx.createGain(); sum.gain.value = 0.42; sum.connect(tape.input);
-    const srcBus = ctx.createGain(); srcBus.gain.value = 0.85;
-    // source: lowpass to sit under the bass + duck gain driven by kicks
-    const srcLp = ctx.createBiquadFilter(); srcLp.type = 'lowpass'; srcLp.frequency.value = 9000; srcLp.Q.value = 0.5;
-    const srcHp = ctx.createBiquadFilter(); srcHp.type = 'highpass'; srcHp.frequency.value = 140; srcHp.Q.value = 0.8; // leave the sub to the 808
+    const sum = ctx.createGain(); sum.gain.value = 0.7; sum.connect(tape.input);
+    // The song is the lead. It is normalised to a known loudness (see load()) and runs through a
+    // gentle highpass so the 808 owns the sub; the kit sits around it, not on top of it.
+    const srcBus = ctx.createGain(); srcBus.gain.value = this.srcGain || 1;
+    const srcLp = ctx.createBiquadFilter(); srcLp.type = 'lowpass'; srcLp.frequency.value = 14000; srcLp.Q.value = 0.5;
+    const srcHp = ctx.createBiquadFilter(); srcHp.type = 'highpass'; srcHp.frequency.value = 90; srcHp.Q.value = 0.7;
     const duck = ctx.createGain(); duck.gain.value = 1;
     srcBus.connect(srcHp); srcHp.connect(srcLp); srcLp.connect(duck); duck.connect(sum);
-    const bass = new Bass808(ctx, sum, { drive: 0.6, tone: 1500, sub: 0.4, level: 0.9 });
-    const drums = new Drums(ctx, sum, { memphis: 0.5, level: 0.95 });
-    const bell = new Cowbell(ctx, sum, { stack: 0.55, grit: 0.5, hall: 0.28, level: 1.1 });
-    return { ctx, dest, tape, sum, srcBus, srcHp, srcLp, duck, bass, drums, bell, nodes: new Set() };
+    const kit = ctx.createGain(); kit.gain.value = 0.26; kit.connect(sum);
+    const bass = new Bass808(ctx, kit, { drive: 0.6, tone: 1500, sub: 0.4, level: 0.9 });
+    const drums = new Drums(ctx, kit, { memphis: 0.5, level: 0.95 });
+    const bell = new Cowbell(ctx, kit, { stack: 0.55, grit: 0.5, hall: 0.28, level: 1.1 });
+    return { ctx, dest, tape, sum, srcBus, srcHp, srcLp, duck, kit, bass, drums, bell, nodes: new Set() };
   }
   applyMix(g) {
     const p = this.params;
-    g.bass.set('level', 0.95 * p.bass); g.bass.set('drive', 0.3 + p.grit * 0.6);
-    g.bell.set('level', 1.25 * p.bell); g.bell.set('grit', p.grit * 0.9);
-    g.drums.set('memphis', 0.15 + p.grit * 0.6); g.drums.set('level', 1.1);
-    g.tape.set('saturation', 0.3 + p.grit * 0.6); g.tape.set('tone', 18000 - p.grit * 6000); g.tape.set('hiss', p.grit * 0.5); g.tape.set('wow', 0.1 + (1 - p.slow) * 1.2);
-    g.srcLp.frequency.value = 12000 - p.grit * 5000;
+    g.bass.set('level', 1.3 * p.bass); g.bass.set('drive', 0.3 + p.grit * 0.6);
+    g.bell.set('level', 0.9 * p.bell); g.bell.set('grit', p.grit * 0.9);
+    g.drums.set('memphis', 0.1 + p.grit * 0.5); g.drums.set('level', 1.0);
+    g.tape.set('saturation', 0.08 + p.grit * 0.35); g.tape.set('tone', 18000 - p.grit * 5000); g.tape.set('hiss', p.grit * 0.2); g.tape.set('wow', 0.05 + (1 - p.slow) * 0.5);
+    g.srcLp.frequency.value = 15000 - p.grit * 5000;
   }
   // Schedule everything from source time `fromSrc` onward, starting at context time `t0`.
   // Source time is stretched by 1/slow: everything plays slower and lower (tape-style).
@@ -228,7 +237,7 @@ export class Phonker {
       switch (ev.kind) {
         case 'kick': g.drums.hit(t, 'kick', ev.v);
           // duck the source under the kick
-          g.duck.gain.setValueAtTime(1, t - 0.002); g.duck.gain.linearRampToValueAtTime(0.35, t + 0.008); g.duck.gain.setTargetAtTime(1, t + 0.05, 0.08);
+          g.duck.gain.setValueAtTime(1, t - 0.002); g.duck.gain.linearRampToValueAtTime(0.6, t + 0.008); g.duck.gain.setTargetAtTime(1, t + 0.04, 0.06);
           break;
         case 'snare': g.drums.hit(t, 'snare', ev.v); break;
         case 'clap': g.drums.hit(t, 'clap', ev.v); break;

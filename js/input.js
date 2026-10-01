@@ -26,43 +26,84 @@ export async function youtubeMeta(link) {
   } catch (e) { return { title: 'YouTube video', thumb: `https://i.ytimg.com/vi/${link.id}/hqdefault.jpg`, provider: 'YouTube' }; }
 }
 
-// Tab capture: the user shares THIS tab (with audio) while the embedded video plays; we record the
-// stream to PCM through a ScriptProcessor (works everywhere getDisplayMedia does) and stop at the
-// end of the video or when the user presses stop.
+// Tab capture: the user shares THIS tab (with audio) while the embedded video plays. The audio
+// track goes to a MediaRecorder (off the main thread, so a busy page cannot drop samples); at the
+// end the blob is decoded back to PCM. An AnalyserNode on the same stream drives the level meter
+// and remembers the peak, so a silent share is caught instead of being "phonked".
 export class TabRecorder {
-  constructor(ctx) { this.ctx = ctx; this.chunks = []; this.length = 0; this.stream = null; this.proc = null; this.active = false; }
+  constructor(ctx) { this.ctx = ctx; this.chunks = []; this.stream = null; this.active = false; this.peak = 0; this.startedAt = 0; }
   async start(onLevel) {
-    if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('This browser cannot capture tab audio. Use Chrome or Edge, or drop the file instead.');
+    if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('This browser cannot capture tab audio. Use Chrome or Edge on a computer, or drop the file instead.');
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: { width: 320, height: 180, frameRate: 1 }, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false },
       preferCurrentTab: true, selfBrowserSurface: 'include', systemAudio: 'include',
     });
-    if (!stream.getAudioTracks().length) { stream.getTracks().forEach((t) => t.stop()); throw new Error('No audio in the shared tab. Tick "Share tab audio" in the dialog and try again.'); }
+    if (!stream.getAudioTracks().length) { stream.getTracks().forEach((t) => t.stop()); throw new Error('No audio in what you shared. Pick THIS TAB and tick "Share tab audio", then try again.'); }
     this.stream = stream;
-    const src = this.ctx.createMediaStreamSource(stream);
-    const proc = this.ctx.createScriptProcessor(4096, 2, 2);
-    const sink = this.ctx.createGain(); sink.gain.value = 0;
-    proc.onaudioprocess = (e) => {
-      if (!this.active) return;
-      const L = e.inputBuffer.getChannelData(0), R = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : L;
-      this.chunks.push([new Float32Array(L), new Float32Array(R)]); this.length += L.length;
-      if (onLevel) { let s = 0; for (let i = 0; i < L.length; i += 16) s += L[i] * L[i]; onLevel(Math.sqrt(s / (L.length / 16))); }
-    };
-    src.connect(proc); proc.connect(sink); sink.connect(this.ctx.destination);
-    this.src = src; this.proc = proc; this.active = true;
+    const audioOnly = new MediaStream(stream.getAudioTracks());
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) => window.MediaRecorder?.isTypeSupported?.(m));
+    if (mime) {
+      this.rec = new MediaRecorder(audioOnly, { mimeType: mime, audioBitsPerSecond: 256000 });
+      this.rec.ondataavailable = (e) => { if (e.data && e.data.size) this.chunks.push(e.data); };
+      this.rec.start(1000);
+    } else {
+      this.tap = new PcmTap(this.ctx, audioOnly); // very old browsers: ScriptProcessor fallback
+    }
+    this.src = this.ctx.createMediaStreamSource(audioOnly);
+    this.an = this.ctx.createAnalyser(); this.an.fftSize = 1024; this.src.connect(this.an);
+    const buf = new Float32Array(this.an.fftSize);
+    this.meter = setInterval(() => {
+      this.an.getFloatTimeDomainData(buf); let s = 0, pk = 0;
+      for (let i = 0; i < buf.length; i += 2) { const v = buf[i]; s += v * v; if (v > pk) pk = v; else if (-v > pk) pk = -v; }
+      this.peak = Math.max(this.peak, pk); onLevel?.(Math.sqrt(s / (buf.length / 2)));
+    }, 100);
+    this.active = true; this.startedAt = performance.now();
     stream.getVideoTracks()[0]?.addEventListener('ended', () => this.onended?.());
     stream.getAudioTracks()[0]?.addEventListener('ended', () => this.onended?.());
   }
+  get seconds() { return this.active ? (performance.now() - this.startedAt) / 1000 : 0; }
+  async stop() {
+    this.active = false; clearInterval(this.meter);
+    try { this.src?.disconnect(); } catch (e) {}
+    let buf;
+    if (this.rec) {
+      if (this.rec.state !== 'inactive') await new Promise((res) => { this.rec.onstop = res; this.rec.stop(); });
+      this.stream?.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(this.chunks, { type: this.rec.mimeType }); this.chunks = [];
+      if (!blob.size) throw new Error('Nothing was recorded.');
+      buf = await this.ctx.decodeAudioData(await blob.arrayBuffer());
+    } else {
+      this.stream?.getTracks().forEach((t) => t.stop());
+      buf = this.tap.stop();
+    }
+    return trimSilence(buf);
+  }
+}
+
+// ScriptProcessor fallback used only when MediaRecorder cannot do audio.
+class PcmTap {
+  constructor(ctx, stream) {
+    this.ctx = ctx; this.chunks = []; this.length = 0;
+    this.src = ctx.createMediaStreamSource(stream);
+    this.proc = ctx.createScriptProcessor(4096, 2, 2);
+    const sink = ctx.createGain(); sink.gain.value = 0;
+    this.proc.onaudioprocess = (e) => { const L = e.inputBuffer.getChannelData(0), R = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : L; this.chunks.push([new Float32Array(L), new Float32Array(R)]); this.length += L.length; };
+    this.src.connect(this.proc); this.proc.connect(sink); sink.connect(ctx.destination);
+  }
   stop() {
-    this.active = false;
-    try { this.proc?.disconnect(); this.src?.disconnect(); } catch (e) {}
-    this.stream?.getTracks().forEach((t) => t.stop());
+    try { this.proc.disconnect(); this.src.disconnect(); } catch (e) {}
     const buf = this.ctx.createBuffer(2, Math.max(1, this.length), this.ctx.sampleRate);
     const L = buf.getChannelData(0), R = buf.getChannelData(1);
     let o = 0; for (const [l, r] of this.chunks) { L.set(l, o); R.set(r, o); o += l.length; }
-    this.chunks = []; this.length = 0;
-    return trimSilence(buf);
+    this.chunks = []; return buf;
   }
+}
+
+// How loud is a buffer? Peak and RMS over the whole thing (strided), used to refuse silent input.
+export function measure(buf) {
+  let peak = 0, s = 0, n = 0;
+  for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i += 8) { const v = d[i]; const a = v < 0 ? -v : v; if (a > peak) peak = a; s += v * v; n++; } }
+  return { peak, rms: n ? Math.sqrt(s / n) : 0 };
 }
 
 export class MicRecorder {
