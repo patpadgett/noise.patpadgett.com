@@ -27,6 +27,11 @@ export function timeline(treatment, analysis) {
   return { cues, scenes, lights: cues.filter((c) => c.kind === 'light'), lyrics: cues.filter((c) => c.kind === 'lyric') };
 }
 export function sceneAt(tl, t) { let s = null; for (const c of tl.scenes) { if (c.start <= t) s = c; else break; } return s; }
+// Clips are 4, 8 or 12 s and scenes are not. A clip shorter than its scene plays slowed so it covers the
+// scene exactly (rate = clip / scene, never above 1); a clip longer than its scene is simply cut at the OUT.
+export function clipRate(scene, clipDuration) { const len = scene.end - scene.start; return len > 0 && clipDuration > 0 ? Math.min(1, clipDuration / len) : 1; }
+// media time inside the clip for song time t
+export function clipTime(scene, clipDuration, t) { return Math.max(0, Math.min(Math.max(0, clipDuration - 0.05), (t - scene.start) * clipRate(scene, clipDuration))); }
 export function nextCue(tl, t) { for (const c of tl.cues) if (c.start > t + 0.001) return c; return null; }
 export function activeAt(list, t) { return list.filter((c) => c.start <= t && t < c.end); }
 

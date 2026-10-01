@@ -29,7 +29,7 @@ app.http('openai', {
     let body = null;
     if (req.method === 'POST') {
       body = await req.text();
-      if (path === 'videos') { let j; try { j = JSON.parse(body); } catch { return { status: 400 }; } const secs = Math.min(20, Math.max(1, parseInt(j.seconds || '4', 10))); const c = charge(req, secs); if (!c.ok) return { status: 429, jsonBody: { error: { message: c.why } } }; j.model = 'sora-2'; body = JSON.stringify(j); }
+      if (path === 'videos') { let j; try { j = JSON.parse(body); } catch { return { status: 400 }; } const secs = parseInt(j.seconds || '4', 10); if (![4, 8, 12].includes(secs)) return { status: 400, jsonBody: { error: { message: `Invalid value: '${j.seconds}'. Supported values are: '4', '8', and '12'.`, param: 'seconds', code: 'invalid_value' } } }; const c = charge(req, secs); if (!c.ok) return { status: 429, jsonBody: { error: { message: c.why } } }; j.model = 'sora-2'; body = JSON.stringify(j); }
       if (path === 'responses') { let j; try { j = JSON.parse(body); } catch { return { status: 400 }; } if (String(j.input || '').length > 60000) return { status: 413 }; j.model = process.env.CUE_CHAT_DEPLOYMENT || 'gpt-6-astra'; body = JSON.stringify(j); }
     }
     const url = `${ENDPOINT}/openai/v1/${path}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;

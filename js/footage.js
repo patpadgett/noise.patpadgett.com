@@ -26,7 +26,8 @@ export class FootageJob {
   }
   emit() { this.onUpdate && this.onUpdate(this); }
   get done() { return this.items.every((i) => i.state === 'done' || i.state === 'failed'); }
-  get spent() { return this.items.filter((i) => i.state !== 'queued' && !i.cached).reduce((s, i) => s + i.seconds, 0); }
+  // what Azure has been asked to generate: everything that got a job id (a create rejected with a 400 cost nothing)
+  get spent() { return this.items.filter((i) => i.state !== 'queued' && !i.cached && (i.state !== 'failed' || i.id)).reduce((s, i) => s + i.seconds, 0); }
   pump() {
     if (this.cancelled) return;
     while (this.inflight < this.MAX) { const next = this.items.find((i) => i.state === 'queued'); if (!next) break; this.run(next); }

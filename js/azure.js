@@ -54,7 +54,8 @@ export async function writeTreatment({ title, analysis, lyrics, aligned }, { sig
 }
 
 // ---- 3. Footage: Sora 2 jobs. create → poll → download. Two jobs run at once on the preview. --
-// size: '1280x720' | '720x1280'; seconds: 4..20 (integer, sent as a string per the API)
+// size: '1280x720' | '720x1280'; seconds: 4 | 8 | 12 only (sent as a string per the API; anything
+// else is a 400 "Invalid value: '18'. Supported values are: '4', '8', and '12'.")
 export async function createVideo({ prompt, size, seconds }, { signal } = {}) {
   const cfg = loadConfig(); const [url, headers] = oai(cfg, '/videos');
   return j(await fetch(url, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: cfg.videoDeployment || 'sora-2', prompt, size, seconds: String(seconds) }), signal }));
@@ -85,10 +86,14 @@ export async function probe() {
 }
 
 export function estimateCost(treatment, analysis) {
-  // every scene cue becomes one clip; clip length = the scene's bars in seconds, clamped to Sora's 4..20 s, rounded up
+  // every scene cue becomes one clip; clip length = the shortest Sora length that covers the scene (see clipSeconds)
   const beat = 60 / analysis.bpm;
   let seconds = 0, clips = 0;
   for (const c of treatment.cues) if (c.kind === 'scene') { clips++; seconds += clipSeconds(c, beat); }
   return { clips, seconds, dollars: +(seconds * PRICE_PER_SECOND).toFixed(2) };
 }
-export function clipSeconds(cue, beat) { return Math.max(4, Math.min(20, Math.ceil(cue.bars * 4 * beat))); }
+// Sora 2 renders 4, 8 or 12 seconds and nothing else. Take the shortest that covers the scene, allowing
+// up to 10% slow-motion so a 4.3 s scene gets a 4 s clip rather than an 8; a scene longer than 13.2 s
+// takes the 12 and the switcher plays it slowed to fit (clipRate in switcher.js).
+export const CLIP_LENGTHS = [4, 8, 12];
+export function clipSeconds(cue, beat) { const need = cue.bars * 4 * beat; return CLIP_LENGTHS.find((s) => s * 1.1 >= need) ?? CLIP_LENGTHS[CLIP_LENGTHS.length - 1]; }

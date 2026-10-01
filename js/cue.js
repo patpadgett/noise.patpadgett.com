@@ -1,7 +1,7 @@
 // CUE — the controller. One screen, three states: nosource → onair → render.
 import { loadConfig, saveConfig, configured, probe, transcribe, writeTreatment, estimateCost } from './azure.js';
 import { alignLyrics, flattenWords, stanzas } from './align.js';
-import { timeline, sceneAt, nextCue, drawFrame, barAt, barTime, fmtTC, fmtIn, fmtCountdown } from './switcher.js';
+import { timeline, sceneAt, nextCue, drawFrame, barAt, barTime, fmtTC, fmtIn, fmtCountdown, clipRate, clipTime } from './switcher.js';
 import { FootageJob, exportVideo, download, getClip, clipKey } from './footage.js';
 import { DEMO_TITLE, DEMO_LYRICS } from './demo-lyrics.js';
 
@@ -173,11 +173,15 @@ class App {
   syncPlayKey() { const k = $('#play'); k.classList.toggle('is-on', this.playing); k.setAttribute('aria-pressed', this.playing); k.querySelector('.lbl').textContent = this.playing ? 'ON AIR' : 'PLAY'; }
   pauseClips() { for (const { video } of this.clips.values()) video.pause(); }
 
-  // the switcher's clip accessor: a <video> positioned at the right media time for the scene
+  // the switcher's clip accessor: a <video> positioned at the right media time for the scene. Clips are
+  // 4/8/12 s and scenes are not: a shorter clip plays slowed (clipRate) so it lasts the whole scene.
   clipFor(scene, t = this.position(), live = true) {
     const c = this.clips.get(scene.n); if (!c) return null;
-    const mt = Math.max(0, Math.min((c.video.duration || 20) - 0.05, t - scene.start));
-    if (live) { if (this.playing) { if (c.video.paused) c.video.play().catch(() => {}); if (Math.abs(c.video.currentTime - mt) > 0.25) c.video.currentTime = mt; } else if (Math.abs(c.video.currentTime - mt) > 0.05) c.video.currentTime = mt; }
+    const dur = c.video.duration || 12, rate = clipRate(scene, dur), mt = clipTime(scene, dur, t);
+    if (live) {
+      if (c.video.playbackRate !== rate) c.video.playbackRate = rate;
+      if (this.playing) { if (c.video.paused) c.video.play().catch(() => {}); if (Math.abs(c.video.currentTime - mt) > 0.25) c.video.currentTime = mt; } else if (Math.abs(c.video.currentTime - mt) > 0.05) c.video.currentTime = mt;
+    }
     return c.video.readyState >= 2 ? c.video : null;
   }
 
@@ -237,7 +241,10 @@ class App {
     const ol = $('#jobs'); ol.replaceChildren();
     for (const it of this.job.items) {
       const li = document.createElement('li'); li.className = 'job'; li.dataset.n = it.scene.n;
-      li.innerHTML = `<div class="job__thumb"><canvas width="320" height="180"></canvas></div><div class="job__meta"><span class="job__n">SCENE ${String(it.scene.n).padStart(2, '0')}</span><span class="job__state">queued</span><span>${it.seconds}s</span><div class="job__bar"><b></b></div></div>`;
+      li.innerHTML = `<div class="job__thumb"><canvas width="320" height="180"></canvas></div><div class="job__meta"><span class="job__n">SCENE ${String(it.scene.n).padStart(2, '0')}</span><span class="job__state">queued</span><span class="job__len">${it.seconds}s</span><div class="job__bar"><b></b></div></div>`;
+      // clips come in 4/8/12 s; say so when the clip will play slowed to cover a longer scene
+      const sceneLen = it.scene.end - it.scene.start, rate = clipRate(it.scene, it.seconds);
+      li.querySelector('.job__len').title = rate < 0.995 ? `${it.seconds} s clip over a ${sceneLen.toFixed(1)} s scene · plays at ${rate.toFixed(2)}×` : `${it.seconds} s clip · ${sceneLen.toFixed(1)} s scene`;
       ol.appendChild(li);
       const cv = li.querySelector('canvas'); drawFrame(cv.getContext('2d'), 320, 180, it.scene.start + 0.02, this.tl, this.analysis, { clipFor: () => null, palette: this.treatment.palette, showLyrics: false });
     }
@@ -246,7 +253,10 @@ class App {
     for (const it of j.items) {
       const li = $(`#jobs li[data-n="${it.scene.n}"]`); if (!li) continue;
       li.className = 'job' + (it.state === 'running' || it.state === 'creating' || it.state === 'downloading' ? ' is-running' : it.state === 'done' ? ' is-done' : it.state === 'failed' ? ' is-failed' : '');
-      li.querySelector('.job__state').textContent = it.state === 'failed' ? ('failed · ' + (it.error || '')).slice(0, 60) : it.state === 'running' ? `rendering ${Math.round(it.progress * 100)}%` : it.cached ? 'done · cached' : it.state;
+      const st = li.querySelector('.job__state');
+      st.textContent = it.state === 'failed' ? 'failed' : it.state === 'running' ? `rendering ${Math.round(it.progress * 100)}%` : it.cached ? 'done · cached' : it.state;
+      // the whole reason, where a tile cannot: on the tile's tooltip and in the desk line below
+      if (it.state === 'failed') { li.title = it.error || 'failed'; st.title = it.error || 'failed'; } else { li.removeAttribute('title'); st.removeAttribute('title'); }
       li.querySelector('.job__bar b').style.width = Math.round(it.progress * 100) + '%';
       if (it.state === 'done' && !this.clips.has(it.scene.n)) {
         const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.preload = 'auto'; video.src = it.url; video.load();
@@ -255,8 +265,11 @@ class App {
         this.drawPVW(true);
       }
     }
-    const done = j.items.filter((i) => i.state === 'done').length, failed = j.items.filter((i) => i.state === 'failed').length;
-    $('#render-line').textContent = j.done ? `${done} of ${j.items.length} clips in${failed ? `, ${failed} failed (press RENDER again to retry those)` : ''}. $${(j.spent * 0.10).toFixed(2)} spent.` : `${done} of ${j.items.length} clips in · ${j.inflight} rendering · $${(j.spent * 0.10).toFixed(2)} committed so far`;
+    const done = j.items.filter((i) => i.state === 'done').length, failedItems = j.items.filter((i) => i.state === 'failed'), failed = failedItems.length;
+    // one line of truth: progress while running; on finish, the count and — if anything failed — the first full reason, so it is never cut to a tile
+    const reasons = [...new Set(failedItems.map((i) => i.error).filter(Boolean))];
+    const why = failed ? ` ${reasons.length > 1 ? `${reasons.length} reasons, first: ` : ''}${reasons[0] || 'no reason given'}` : '';
+    $('#render-line').textContent = j.done ? `${done} of ${j.items.length} clips in${failed ? `, ${failed} failed — ${why.trim()} (press RETRY FAILED to try those again)` : ''}. $${(j.spent * 0.10).toFixed(2)} spent.` : `${done} of ${j.items.length} clips in · ${j.inflight} rendering${failed ? ` · ${failed} failed:${why}` : ''} · $${(j.spent * 0.10).toFixed(2)} committed so far`;
     $('#export').disabled = !(done > 0);
     if (j.done) $('#render').textContent = failed ? 'RETRY FAILED' : 'RE-RENDER';
   }
@@ -272,7 +285,7 @@ class App {
     const seekTo = (v, mt) => new Promise((r) => { if (Math.abs(v.currentTime - mt) < 0.001) return r(); v.onseeked = () => r(); v.currentTime = mt; });
     const drawAt = async (ctx, w, h, t) => {
       const scene = sceneAt(this.tl, t); let src = null;
-      if (scene && vids.has(scene.n)) { const v = vids.get(scene.n); await seekTo(v, Math.max(0, Math.min((v.duration || 20) - 0.05, t - scene.start))); src = v; }
+      if (scene && vids.has(scene.n)) { const v = vids.get(scene.n); await seekTo(v, clipTime(scene, v.duration || 12, t)); src = v; }
       drawFrame(ctx, w, h, t, this.tl, this.analysis, { clipFor: () => src, noStrobe: $('#nostrobe').checked, palette: this.treatment.palette });
     };
     try {
