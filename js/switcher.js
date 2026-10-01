@@ -35,14 +35,16 @@ export function lightLevel(c, t, analysis, noStrobe) {
   const beatSec = 60 / analysis.bpm, el = t - c.start, len = c.end - c.start;
   if (el < 0 || el >= len) return 0;
   const beatPos = (t - analysis.barStarts[0]) / beatSec; // beats since the first downbeat
+  // NO STROBE: every repeating effect is capped below 3 flashes per second (WCAG 2.3.1), measured in real Hz, and strobes soften to pulses
+  const maxRate = noStrobe ? Math.max(0.25, Math.min(c.rate || 1, 2.9 * beatSec)) : null;
   const eff = noStrobe && c.effect === 'strobe' ? 'pulse' : c.effect;
   switch (eff) {
     case 'strobe': { const rate = Math.max(1, c.rate || 4); const ph = (beatPos * rate) % 1; return ph < 0.5 ? 1 : 0; } // square, N hits per beat
-    case 'pulse': { const rate = Math.max(0.25, Math.min(noStrobe ? 1 : 4, c.rate || 1)); const ph = (beatPos * rate) % 1; return Math.pow(1 - ph, 2); } // decaying per hit
+    case 'pulse': { const rate = noStrobe ? maxRate : Math.max(0.25, Math.min(4, c.rate || 1)); const ph = (beatPos * rate) % 1; return Math.pow(1 - ph, 2); } // decaying per hit
     case 'flash': return Math.max(0, 1 - el / Math.min(len, beatSec * 1.5)); // one hit on the IN, decays over ~1.5 beats
     case 'wash': { const a = Math.min(1, el / (beatSec * 2)), r = Math.min(1, (len - el) / (beatSec * 2)); return 0.55 * Math.min(a, r); } // fades in and out over 2 beats
     case 'blackout': return 1;
-    case 'flicker': { const x = Math.sin(t * 97.3) * Math.sin(t * 31.7 + 1) * Math.sin(t * 13.1); return x > 0.15 ? 0.9 : x > -0.3 ? 0.2 : 0; }
+    case 'flicker': { if (noStrobe) { const ph = (beatPos * maxRate) % 1; return 0.35 * Math.pow(1 - ph, 2); } const x = Math.sin(t * 97.3) * Math.sin(t * 31.7 + 1) * Math.sin(t * 13.1); return x > 0.15 ? 0.9 : x > -0.3 ? 0.2 : 0; }
     default: return 0;
   }
 }
@@ -52,7 +54,7 @@ function hex(h, a = 1) { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); if (!m) r
 // ---- draw one frame -------------------------------------------------------------------------
 // ctx: 2d context sized to W×H. clipFor(scene) returns a drawable (HTMLVideoElement/ImageBitmap/null)
 // positioned at the right media time by the caller. palette from the treatment colours the fallback.
-export function drawFrame(ctx, W, H, t, tl, analysis, { clipFor, noStrobe = false, palette = ['#222'], stanzas = [], showLyrics = true, showShot = true, fontClock = "'Barlow Condensed'", fontText = 'Archivo' }) {
+export function drawFrame(ctx, W, H, t, tl, analysis, { clipFor, noStrobe = false, freezeLights = false, palette = ['#222'], stanzas = [], showLyrics = true, showShot = true, fontClock = "'Barlow Condensed'", fontText = 'Archivo' }) {
   const scene = sceneAt(tl, t);
   const src = scene ? clipFor(scene) : null;
   ctx.save(); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
@@ -78,10 +80,10 @@ export function drawFrame(ctx, W, H, t, tl, analysis, { clipFor, noStrobe = fals
       ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = Math.max(1, H * 0.003); ctx.beginPath(); ctx.moveTo(pad, H * 0.335); ctx.lineTo(W - pad, H * 0.335); ctx.stroke();
     }
   }
-  // lights, in cue order; additive, blackout wins
+  // lights, in cue order; additive, blackout wins. freezeLights (reduced motion on the live monitor): hold each cue at a steady level instead of flashing
   let black = 0;
   for (const c of activeAt(tl.lights, t)) {
-    const lv = lightLevel(c, t, analysis, noStrobe); if (lv <= 0) continue;
+    const lv = freezeLights ? (c.effect === 'blackout' ? 1 : c.effect === 'wash' ? 0.4 : 0.25) : lightLevel(c, t, analysis, noStrobe); if (lv <= 0) continue;
     if (c.effect === 'blackout') { black = Math.max(black, lv); continue; }
     ctx.globalCompositeOperation = c.effect === 'wash' ? 'overlay' : 'screen';
     ctx.fillStyle = hex(c.color || '#ffffff', c.effect === 'wash' ? lv : lv * 0.95); ctx.fillRect(0, 0, W, H);
@@ -117,4 +119,5 @@ function wrapText(ctx, text, x, y, maxW, lh, maxLines) {
 
 export function fmtTC(t) { t = Math.max(0, t); const m = Math.floor(t / 60), s = Math.floor(t % 60), d = Math.floor((t % 1) * 10); return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${d}`; }
 export function fmtIn(t) { const m = Math.floor(t / 60), s = (t % 60); return `${m}:${s.toFixed(1).padStart(4, '0')}`; }
-export function fmtCountdown(dt) { if (dt <= 0) return 'GO'; return `−${fmtIn(dt).replace(/^0:/, '0:')}`; }
+// NEXT CUE counts in beats, ticking on the beat grid, bars.beats when far out: a floor manager's count, not a stopwatch.
+export function fmtCountdown(dt, beatSec = 0.5) { if (dt <= 0) return 'GO'; const beats = Math.ceil(dt / beatSec - 1e-6); if (beats > 16) return `−${Math.floor(beats / 4)} BARS`; return `−${beats}`; }

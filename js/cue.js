@@ -16,6 +16,7 @@ class App {
     this.clips = new Map(); // scene.n -> { url, video }
     this.job = null; this.size = '1280x720';
     this.screen = $('#screen'); this.sctx = this.screen.getContext('2d');
+    const rm = matchMedia('(prefers-reduced-motion: reduce)'); this.reducedMotion = rm.matches; rm.addEventListener('change', () => { this.reducedMotion = rm.matches; });
     this.pvwCanvases = $$('.mon--pvw canvas').map((c) => ({ c, ctx: c.getContext('2d') }));
     this.bind(); this.loop = this.loop.bind(this); requestAnimationFrame(this.loop);
     this.setState('nosource');
@@ -126,7 +127,7 @@ class App {
     } catch (e) { console.error(e); this.progress(null); this.toast('Could not write the cues: ' + e.message, true); }
   }
   setTreatment(tr) {
-    this.treatment = tr; this.tl = timeline(tr, this.analysis);
+    this.treatment = tr; this.tl = timeline(tr, this.analysis); $('#lyrics-box').hidden = true;
     $('#treatment').textContent = tr.title_treatment; $('#rewrite').hidden = false;
     $('#strobe-warn').hidden = !tr.strobe_warning && !tr.cues.some((c) => c.kind === 'light' && c.effect === 'strobe');
     this.renderRundown(); this.updateCost(); this.setState('onair'); $('#render').disabled = false;
@@ -186,11 +187,11 @@ class App {
     if (!this.buffer || !this.analysis) return;
     if (!this.tl) { const t = this.position(); $('#tc').textContent = fmtTC(t); const b = barAt(this.analysis, t); $('#bar').textContent = `${String(b.bar).padStart(3, '0')}.${b.beat}`; return; }
     const t = this.position();
-    const scene = drawFrame(this.sctx, this.screen.width, this.screen.height, t, this.tl, this.analysis, { clipFor: (s) => this.clipFor(s, t), noStrobe: $('#nostrobe').checked, palette: this.treatment.palette });
+    const scene = drawFrame(this.sctx, this.screen.width, this.screen.height, t, this.tl, this.analysis, { clipFor: (s) => this.clipFor(s, t), noStrobe: $('#nostrobe').checked, freezeLights: this.reducedMotion, palette: this.treatment.palette });
     // clock
     $('#tc').textContent = fmtTC(t);
     const b = barAt(this.analysis, t); $('#bar').textContent = `${String(b.bar).padStart(3, '0')}.${b.beat}`;
-    const nx = nextCue(this.tl, t); const nxt = $('#next'); nxt.textContent = nx ? fmtCountdown(nx.start - t) : 'END'; nxt.classList.toggle('is-air', !!nx && nx.start - t < 0.5);
+    const nx = nextCue(this.tl, t); const nxt = $('#next'); nxt.textContent = nx ? fmtCountdown(nx.start - t, 60 / this.analysis.bpm) : 'END';
     const sections = this.treatment.sections || []; let sec = null; for (const s of sections) if (s.bar <= b.bar) sec = s; $('#section').textContent = sec ? sec.name.toUpperCase() : '—';
     // PGM caption + tally
     const pgm = $('#pgm'); pgm.classList.toggle('is-air', this.playing);
@@ -214,7 +215,7 @@ class App {
       fig.classList.toggle('is-next', i === 0 && !!s);
       if (!s) { fig.dataset.start = ''; fig.querySelector('.mon__tally span').textContent = '—'; fig.querySelectorAll('.mon__cap span')[0].textContent = '—'; fig.querySelectorAll('.mon__cap span')[1].textContent = '—'; slot.ctx.fillStyle = '#000'; slot.ctx.fillRect(0, 0, slot.c.width, slot.c.height); return; }
       const key = `${s.n}:${this.clips.has(s.n)}`; if (!force && fig.dataset.key === key) return; fig.dataset.key = key; fig.dataset.start = s.start.toFixed(3);
-      fig.querySelector('.mon__tally span').textContent = `SCENE ${String(s.n).padStart(2, '0')}`;
+      fig.querySelector('.mon__tally span').textContent = `SCENE ${String(s.n).padStart(2, '0')}`; fig.querySelector('.mon__tally span').dataset.short = String(s.n).padStart(2, '0');
       fig.querySelectorAll('.mon__cap span')[0].textContent = s.anchor.replace(/^Bar \d+ /, ''); fig.querySelectorAll('.mon__cap span')[1].textContent = fmtIn(s.start);
       drawFrame(slot.ctx, slot.c.width, slot.c.height, s.start + 0.02, this.tl, this.analysis, { clipFor: (sc) => this.clipFor(sc, s.start + 0.02, false), palette: this.treatment.palette, showLyrics: false, showShot: false });
     });
