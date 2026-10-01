@@ -1,0 +1,4 @@
+{
+  "prompt": "1980s synthwave airbrushed pin-up poster illustration, a confident woman in a shiny hot-pink string bikini and mirrored aviator sunglasses, standing full body, leaning back slightly with one hand adjusting her sunglasses, big teased 80s blonde hair, glossy tanned skin lit by magenta and cyan neon rim light, Patrick Nagel meets Miami Vice poster energy, ultra detailed, isolated on a completely flat solid bright green chroma key background, no scenery, no car, no sun, no grid, no floor, plain uniform #00ff00 green backdrop, full figure in frame with space above the head and below the feet [ComfyUI Flux Schnell fp8, seed 88, 6 steps euler/simple, 832x1216, 2026-10-01; matte: rembg isnet-general-use ∪ u2net_human_seg voted with a relative green-dominance key (>0.22), largest component, non-green hole fill, 1 px erosion, 0.8 px feather, spill suppression, edge decontamination]",
+  "createdAt": "2026-10-01T07:05:00.000Z"
+}

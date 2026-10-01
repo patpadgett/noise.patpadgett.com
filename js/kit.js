@@ -74,64 +74,7 @@ function noiseSource(ctx, t, dur) {
 }
 
 // ---------- 808 ----------
-// pre-gain -> tanh -> clip -> lowpass. Envelope decays to a sustain floor and holds for the note.
-export class Bass808 {
-  constructor(ctx, dest, { drive = 0.6, tone = 1500, sub = 0.4, level = 0.9 } = {}) {
-    this.ctx = ctx; this.p = { drive, tone, sub, level };
-    this.pre = ctx.createGain(); this.pre.gain.value = 1 + drive * 3;
-    this.shaper = ctx.createWaveShaper(); this.shaper.curve = driveCurve(drive); this.shaper.oversample = '4x';
-    this.clip = ctx.createWaveShaper(); this.clip.curve = clipCurve(0.85 - drive * 0.25); this.clip.oversample = '2x';
-    this.lp = ctx.createBiquadFilter(); this.lp.type = 'lowpass'; this.lp.frequency.value = tone; this.lp.Q.value = 1.1;
-    this.out = ctx.createGain(); this.out.gain.value = level / (1 + drive * 0.8);
-    this.pre.connect(this.shaper); this.shaper.connect(this.clip); this.clip.connect(this.lp); this.lp.connect(this.out); this.out.connect(dest);
-    this.voice = null;
-  }
-  set(k, v) {
-    this.p[k] = v; const t = this.ctx.currentTime;
-    if (k === 'drive') { this.pre.gain.setTargetAtTime(1 + v * 3, t, 0.02); this.shaper.curve = driveCurve(v); this.clip.curve = clipCurve(0.85 - v * 0.25); this.out.gain.setTargetAtTime(this.p.level / (1 + v * 0.8), t, 0.02); }
-    if (k === 'tone') this.lp.frequency.setTargetAtTime(v, t, 0.02);
-    if (k === 'level') this.out.gain.setTargetAtTime(v / (1 + this.p.drive * 0.8), t, 0.02);
-  }
-  shape(g, t, vel, dur, decay) {
-    const floor = 0.22 * vel, tau = Math.max(0.05, decay * 0.5), hold = Math.max(0.06, dur);
-    g.cancelScheduledValues(t);
-    g.setValueAtTime(Math.max(0.0001, g.value), t);
-    g.linearRampToValueAtTime(vel, t + 0.004);
-    g.setTargetAtTime(floor, t + 0.004, tau);
-    const atEnd = floor + (vel - floor) * Math.exp(-(hold - 0.004) / tau);
-    g.setValueAtTime(atEnd, t + hold);
-    g.exponentialRampToValueAtTime(0.0001, t + hold + 0.05);
-    return t + hold + 0.06;
-  }
-  note(t, midi, vel = 1, dur = 0.5, { slide = false, glide = 0.12, decay = 0.6 } = {}) {
-    const ctx = this.ctx, f = midiToHz(midi);
-    if (slide && this.voice && this.voice.until > t) {
-      const v = this.voice;
-      for (const o of v.oscs) { o.osc.frequency.cancelScheduledValues(t); o.osc.frequency.setValueAtTime(o.osc.frequency.value, t); o.osc.frequency.exponentialRampToValueAtTime(f * o.mult, t + Math.max(0.02, glide)); }
-      const until = this.shape(v.gain.gain, t, 0.95 * vel, dur, decay);
-      for (const o of v.oscs) o.osc.stop(until);
-      v.until = until; return;
-    }
-    if (this.voice && this.voice.until > t) {
-      const v = this.voice;
-      v.gain.gain.cancelScheduledValues(t); v.gain.gain.setValueAtTime(v.gain.gain.value, t); v.gain.gain.linearRampToValueAtTime(0.0001, t + 0.008);
-      for (const o of v.oscs) o.osc.stop(t + 0.01);
-    }
-    const gain = ctx.createGain(); gain.gain.value = 0.0001;
-    const oscs = [];
-    const mk = (type, mult, g) => {
-      const osc = ctx.createOscillator(); osc.type = type;
-      const og = ctx.createGain(); og.gain.value = g; osc.connect(og); og.connect(gain);
-      osc.frequency.setValueAtTime(f * mult * 2.6, t); osc.frequency.exponentialRampToValueAtTime(f * mult, t + 0.035);
-      osc.start(t); oscs.push({ osc, mult });
-    };
-    mk('sine', 1, 1); mk('triangle', 1, 0.25); if (this.p.sub > 0.01) mk('sine', 0.5, this.p.sub * 0.8);
-    const until = this.shape(gain.gain, t, vel, dur, decay);
-    gain.connect(this.pre);
-    for (const o of oscs) o.osc.stop(until);
-    this.voice = { oscs, gain, until };
-  }
-}
+// (removed in v4: NOISE adds no synthesized bass of any kind; the only melodic sound is the record)
 
 // ---------- drums ----------
 // Per-lane filters and shapers are built once and shared; each hit only adds short-lived sources
@@ -222,22 +165,29 @@ export class Cowbell {
     if (k === 'hall') this.wet.gain.setTargetAtTime(v, t, 0.03);
     if (k === 'level') this.out.gain.setTargetAtTime(v, t, 0.02);
   }
-  filterFor(midi) {
+  filterFor(midi, ratio = 1) {
     this.filters = this.filters || new Map();
-    let bp = this.filters.get(midi);
-    if (!bp) { bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = midiToHz(midi) * 1.3; bp.Q.value = 1.6; bp.connect(this.pre); this.filters.set(midi, bp); }
+    const key = midi + ':' + ratio.toFixed(3);
+    let bp = this.filters.get(key);
+    if (!bp) { bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = midiToHz(midi) * ratio * 1.3; bp.Q.value = 1.6; bp.connect(this.pre); this.filters.set(key, bp); }
     return bp;
   }
-  note(t, midi, vel = 1, decay = 0.38, bell = 1.48) {
-    const ctx = this.ctx, f = midiToHz(midi);
-    const g = ctx.createGain(); env(g.gain, t, 0.5 * vel, 0.001, decay);
+  // A phonk cowbell: two detuned squares a 1.48 ratio apart (the classic TR-808 bell interval), a
+  // soft pitch snap on the attack, and the bandpass that gives each note its "clonk". Higher notes
+  // decay faster so a melody line stays articulate; the bottom octave rings. `ratio` detunes the
+  // whole voice with the tape speed so the bells stay in tune with a slowed record.
+  note(t, midi, vel = 1, decay = 0.38, bell = 1.48, ratio = 1) {
+    const ctx = this.ctx, f = midiToHz(midi) * ratio;
+    const d = decay * clamp(1.25 - (midi - 60) / 48, 0.6, 1.3);
+    const g = ctx.createGain(); env(g.gain, t, 0.5 * vel, 0.001, d);
     const voices = [[1, 1], [bell, 0.7]];
     if (this.p.stack > 0.05) voices.push([1.004, this.p.stack * 0.5]);
     for (const [mult, amp] of voices) {
-      const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f * mult;
-      const og = ctx.createGain(); og.gain.value = amp; o.connect(og); og.connect(g); o.start(t); o.stop(t + decay + 0.05);
+      const o = ctx.createOscillator(); o.type = 'square';
+      o.frequency.setValueAtTime(f * mult * 1.06, t); o.frequency.exponentialRampToValueAtTime(f * mult, t + 0.012);
+      const og = ctx.createGain(); og.gain.value = amp; o.connect(og); og.connect(g); o.start(t); o.stop(t + d + 0.05);
     }
-    g.connect(this.filterFor(midi));
+    g.connect(this.filterFor(midi, ratio));
   }
 }
 
@@ -264,9 +214,10 @@ export class Tape {
     this.master = ctx.createGain(); this.master.gain.value = level;
     this.limiter = ctx.createDynamicsCompressor(); this.limiter.threshold.value = -3; this.limiter.knee.value = 1; this.limiter.ratio.value = 20; this.limiter.attack.value = 0.0005; this.limiter.release.value = 0.06;
     this.ceiling = ctx.createWaveShaper(); this.ceiling.curve = clipCurve(0.9); this.ceiling.oversample = '2x';
+    this.trim = ctx.createGain(); this.trim.gain.value = 0.96; // the 2x oversampled clipper overshoots ~0.3 dB on the way back down; keep the file under 0 dBFS
     this.analyser = ctx.createAnalyser(); this.analyser.fftSize = 1024; this.analyser.smoothingTimeConstant = 0.6;
     this.input.connect(this.sat); this.sat.connect(this.tone); this.tone.connect(this.presence); this.presence.connect(this.delay); this.delay.connect(this.comp); this.hissGain.connect(this.comp);
-    this.comp.connect(this.master); this.master.connect(this.limiter); this.limiter.connect(this.ceiling); this.ceiling.connect(this.analyser); this.analyser.connect(dest);
+    this.comp.connect(this.master); this.master.connect(this.limiter); this.limiter.connect(this.ceiling); this.ceiling.connect(this.trim); this.trim.connect(this.analyser); this.analyser.connect(dest);
     this.freq = new Uint8Array(this.analyser.frequencyBinCount);
     this.time = new Uint8Array(this.analyser.fftSize);
   }

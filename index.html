@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NOISE — turn any song into phonk</title>
-<meta name="description" content="Drop a song or paste a YouTube link. NOISE finds the beat and the key, slows it down, and lays phonk drums, a sliding 808 and a cowbell hook over it. Download it as MP3, WAV or a vertical video.">
+<meta name="description" content="Drop a song or paste a YouTube link. NOISE separates it into stems in your browser, reads its melody, re-tunes it into a minor key, and re-chops it over a half-time phonk beat with cowbells. Download MP3, WAV or a vertical video.">
 <meta property="og:title" content="NOISE — turn any song into phonk">
-<meta property="og:description" content="Drop a song. Get phonk. Download MP3, WAV or video.">
+<meta property="og:description" content="Drop a song. Get phonk. Stems, minor key, cowbells, chops. Download MP3, WAV or video.">
 <meta property="og:image" content="https://noise.patpadgett.com/assets/art/countach.jpg">
 <meta property="og:url" content="https://noise.patpadgett.com/">
 <meta name="theme-color" content="#0a0514">
@@ -27,8 +27,8 @@
   <div class="bg__grid"></div>
   <div class="bg__shade"></div>
   <picture class="bg__pinup">
-    <source srcset="assets/art/pinup.webp" type="image/webp">
-    <img src="assets/art/pinup.jpg" alt="" loading="lazy">
+    <source srcset="assets/art/pinup-cut.webp" type="image/webp">
+    <img src="assets/art/pinup-cut.png" alt="" loading="lazy">
   </picture>
 </div>
 
@@ -55,7 +55,8 @@
       <button class="btn btn--ghost" id="mic" type="button"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v5a4 4 0 0 0 4 4zm-7-4h2a5 5 0 0 0 10 0h2a7 7 0 0 1-6 6.93V21h-2v-3.07A7 7 0 0 1 5 11z" fill="currentColor"/></svg>RECORD THE ROOM</button>
       <button class="btn btn--ghost" id="try" type="button">TRY ONE: MAMIE SMITH, 1920</button>
     </div>
-    <p class="fine">Everything happens in your browser. Nothing is uploaded anywhere.</p>
+    <p class="fine">Everything happens in your browser. Nothing is uploaded anywhere. The song is split into stems, re-tuned into a minor key and re-chopped over a half-time beat with cowbells. No synth bass. Ever.</p>
+    <p class="fine fine--tiny" id="intake-note">Real stem separation (optional, on a computer) downloads an 80 MB model once and takes a few minutes per song; a quick split plays in seconds.</p>
   </section>
 
   <!-- STAGE 1b: link landed (YouTube / Spotify) -->
@@ -93,31 +94,85 @@
   <!-- STAGE 3: the phonk version -->
   <section class="deck" id="deck" hidden>
     <div class="now">
-      <div class="now__text">
-        <span class="now__kicker">PHONK VERSION</span>
-        <span class="now__title" id="now-title">—</span>
-        <span class="now__meta" id="now-meta"></span>
-      </div>
       <button class="play" id="play" aria-label="Play or pause" aria-pressed="false">
         <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path class="ico-play" d="M7 4.5v15l12-7.5z" fill="currentColor"/><path class="ico-pause" d="M6 5h4v14H6zM14 5h4v14h-4z" fill="currentColor"/></svg>
       </button>
+      <div class="now__text">
+        <span class="now__title" id="now-title">—</span>
+        <span class="now__meta" id="now-meta"></span>
+      </div>
+      <button class="btn btn--hot btn--big now__save" id="save">SAVE MP3</button>
     </div>
-    <canvas class="scope" id="scope" aria-hidden="true"></canvas>
-    <div class="seek" id="seek" role="slider" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"><i id="seek-fill"></i></div>
+
+    <!-- CHOP SHOP: the slicer -->
+    <section class="dev dev--chop" aria-label="Chop Shop: the song cut into slices">
+      <header class="dev__head">
+        <h2 class="dev__name">CHOP SHOP</h2>
+        <span class="dev__sub">cut at the beats</span>
+        <div class="stems" id="stems" role="status" aria-live="polite">
+          <span class="lamp" data-stem="drums"><i></i>DRUMS</span>
+          <span class="lamp" data-stem="bass"><i></i>BASS</span>
+          <span class="lamp" data-stem="other"><i></i>OTHER</span>
+          <span class="lamp" data-stem="vocals"><i></i>VOCALS</span>
+        </div>
+      </header>
+      <div class="wave" id="wave-wrap">
+        <canvas class="wave__cv" id="wave" aria-hidden="true"></canvas>
+        <div class="wave__flags" id="flags" aria-hidden="true"></div>
+        <div class="wave__head" id="wave-head" aria-hidden="true"></div>
+        <div class="seek" id="seek" role="slider" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"></div>
+        <div class="wave__legend" id="wave-legend" aria-hidden="true"><span class="legend legend--quick"><i></i>QUICK SPLIT</span><span class="legend legend--neural"><i></i>NEURAL STEMS</span></div>
+      </div>
+      <div class="dev__row">
+        <div class="lcd" id="lcd-stems"><b id="lcd-stems-main">QUICK SPLIT</b><span id="lcd-stems-sub">music / drums · playing now</span></div>
+        <div class="lcd lcd--key" id="lcd-key"><b id="lcd-key-main">—</b><span id="lcd-key-sub">key</span></div>
+        <label class="knob" title="How hard the slicer cuts: higher finds more transients and chops more bars">
+          <span class="knob__name">SENSITIVITY</span>
+          <input type="range" min="0" max="1" step="0.01" value="0.5" data-param="sens" aria-label="Slice sensitivity">
+          <span class="knob__val" data-val="sens">50%</span>
+        </label>
+        <button class="btn btn--ghost" id="neural" type="button">GET THE REAL STEMS</button>
+      </div>
+    </section>
+
+    <!-- REX DECK: the loop player -->
+    <section class="dev dev--rex" aria-label="Rex Deck: slice player">
+      <header class="dev__head">
+        <h2 class="dev__name">REX DECK</h2>
+        <span class="dev__sub">8 patterns · 16 pads</span>
+        <div class="slots" id="slots" role="radiogroup" aria-label="Pattern">
+          <button class="slotkey is-on" role="radio" aria-checked="true" data-slot="0">1</button>
+          <button class="slotkey" role="radio" aria-checked="false" data-slot="1">2</button>
+          <button class="slotkey" role="radio" aria-checked="false" data-slot="2">3</button>
+          <button class="slotkey" role="radio" aria-checked="false" data-slot="3">4</button>
+          <button class="slotkey" role="radio" aria-checked="false" data-slot="4">5</button>
+          <button class="slotkey" role="radio" aria-checked="false" data-slot="5">6</button>
+          <button class="slotkey" role="radio" aria-checked="false" data-slot="6">7</button>
+          <button class="slotkey" role="radio" aria-checked="false" data-slot="7">8</button>
+        </div>
+      </header>
+      <div class="rex">
+        <div class="pads" id="pads" role="group" aria-label="Slice pads: press to hear a slice"></div>
+        <div class="lcd lcd--tall" id="lcd-rex">
+          <b id="lcd-bar">BAR —</b>
+          <span class="lcd__line" id="lcd-section">—</span>
+          <span class="lcd__line lcd__line--mag" id="lcd-note">BELLS —</span>
+        </div>
+      </div>
+    </section>
 
     <div class="presets" role="group" aria-label="Presets">
       <button class="chip is-on" data-preset="drift">DRIFT</button>
       <button class="chip" data-preset="memphis">MEMPHIS</button>
       <button class="chip" data-preset="brazilian">BRAZILIAN</button>
-      <button class="chip chip--ghost" id="reroll" title="New drum and chop pattern">↻ REROLL</button>
     </div>
 
     <div class="sliders">
       <label class="sl"><span class="sl__name">SLOW</span><input type="range" min="0.72" max="1" step="0.01" value="0.86" data-param="slow"><span class="sl__val" data-val="slow">86%</span></label>
-      <label class="sl"><span class="sl__name">808</span><input type="range" min="0" max="1.2" step="0.01" value="0.9" data-param="bass"><span class="sl__val" data-val="bass">90%</span></label>
-      <label class="sl"><span class="sl__name">COWBELL</span><input type="range" min="0" max="1.2" step="0.01" value="0.75" data-param="bell"><span class="sl__val" data-val="bell">75%</span></label>
-      <label class="sl"><span class="sl__name">GRIT</span><input type="range" min="0" max="1" step="0.01" value="0.55" data-param="grit"><span class="sl__val" data-val="grit">55%</span></label>
-      <label class="sl sl--flip"><span class="sl__name">FLIP</span><input type="range" min="0" max="1" step="0.01" value="0.15" data-param="flip"><span class="sl__val" data-val="flip">15%</span></label>
+      <label class="sl"><span class="sl__name">KIT</span><input type="range" min="0" max="1.3" step="0.01" value="0.9" data-param="kit"><span class="sl__val" data-val="kit">70%</span></label>
+      <label class="sl"><span class="sl__name">BELLS</span><input type="range" min="0" max="1.2" step="0.01" value="0.8" data-param="bells"><span class="sl__val" data-val="bells">67%</span></label>
+      <label class="sl"><span class="sl__name">GRIT</span><input type="range" min="0" max="1" step="0.01" value="0.5" data-param="grit"><span class="sl__val" data-val="grit">50%</span></label>
+      <label class="sl sl--chop"><span class="sl__name">CHOP</span><input type="range" min="0" max="1" step="0.01" value="0.15" data-param="chop"><span class="sl__val" data-val="chop">15%</span></label>
     </div>
 
     <div class="save">
@@ -126,12 +181,8 @@
         <label class="fmt"><input type="radio" name="fmt" value="wav"><span>WAV</span></label>
         <label class="fmt"><input type="radio" name="fmt" value="video"><span>VIDEO FOR REELS</span></label>
       </div>
-      <button class="btn btn--hot btn--big" id="save">SAVE MP3</button>
-      <div class="save__prog" id="save-prog" hidden><i></i></div>
-    </div>
-
-    <div class="alt alt--one">
       <button class="btn btn--ghost" id="another" type="button">ANOTHER SONG</button>
+      <div class="save__prog" id="save-prog" hidden><i></i></div>
     </div>
   </section>
 
