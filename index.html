@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NOISE — Midnight Countach phonk workstation</title>
-<meta name="description" content="A synthwave phonk workstation in the browser. Twelve-cylinder drums, a distorted sliding 808, cowbell lasers, talkbox chants, a cassette chopper and a slice deck. Save your song as one readable JSON file.">
-<meta property="og:title" content="NOISE — Midnight Countach">
-<meta property="og:description" content="Browser phonk workstation. Turn the key, change anything, take the song home as JSON.">
+<title>NOISE — turn any song into phonk</title>
+<meta name="description" content="Drop a song or paste a YouTube link. NOISE finds the beat and the key, slows it down, and lays phonk drums, a sliding 808 and a cowbell hook over it. Download it as MP3, WAV or a vertical video.">
+<meta property="og:title" content="NOISE — turn any song into phonk">
+<meta property="og:description" content="Drop a song. Get phonk. Download MP3, WAV or video.">
 <meta property="og:image" content="https://noise.patpadgett.com/assets/art/countach.jpg">
 <meta property="og:url" content="https://noise.patpadgett.com/">
 <meta name="theme-color" content="#0a0514">
@@ -14,114 +14,136 @@
 <link rel="preload" href="assets/fonts/audiowide.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/fonts/michroma.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="assets/art/countach.webp" as="image" type="image/webp">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="noise.css">
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <linearGradient id="kchrome" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/><stop offset=".2" stop-color="#b9c2d6"/><stop offset=".5" stop-color="#4a5270"/><stop offset=".62" stop-color="#dbe2f4"/><stop offset="1" stop-color="#7a839c"/>
-    </linearGradient>
-    <radialGradient id="kcap" cx=".4" cy=".35" r=".8">
-      <stop offset="0" stop-color="#2a1d4a"/><stop offset=".6" stop-color="#0f0a20"/><stop offset="1" stop-color="#050310"/>
-    </radialGradient>
-  </defs>
-</svg>
 
-<div class="sky" aria-hidden="true">
-  <div class="sky__sun"></div>
-  <div class="sky__grid"></div>
+<div class="bg" aria-hidden="true">
+  <picture class="bg__art">
+    <source srcset="assets/art/countach.webp" type="image/webp">
+    <img src="assets/art/countach.jpg" alt="" fetchpriority="high">
+  </picture>
+  <div class="bg__sun"></div>
+  <div class="bg__grid"></div>
+  <div class="bg__shade"></div>
+  <picture class="bg__pinup">
+    <source srcset="assets/art/pinup.webp" type="image/webp">
+    <img src="assets/art/pinup.jpg" alt="" loading="lazy">
+  </picture>
 </div>
 
-<div id="cabinet" class="dash">
-  <header class="hero">
-    <picture class="hero__art">
-      <source srcset="assets/art/countach.webp" type="image/webp">
-      <img src="assets/art/countach.jpg" width="1600" height="1095" alt="A white Lamborghini Countach on a wet neon street under a striped synthwave sun" fetchpriority="high">
-    </picture>
-    <div class="hero__laser hero__laser--a"></div>
-    <div class="hero__laser hero__laser--b"></div>
-    <div class="hero__top">
-      <h1 class="wordmark"><span class="wordmark__word">NOISE</span><span class="wordmark__sub">MIDNIGHT COUNTACH · PHONK WORKSTATION</span></h1>
-      <nav class="hero__nav" aria-label="Sections">
-        <a class="key key--ghost" href="#rack">RACK</a>
-        <a class="key key--ghost" href="#lathe">CHOPS</a>
-        <a class="key key--ghost" href="#editor">EDITOR</a>
-        <a class="key key--ghost" href="#manual">MANUAL</a>
-      </nav>
-    </div>
-    <div class="hero__plate" aria-hidden="true"><span>PHONK</span></div>
-    <div class="hero__tag">
-      <span class="tag__line">NOW LOADED</span>
-      <span class="tag__title" id="hero-title">COUNTACH DRIFT</span>
-      <span class="tag__meta">140 · E MINOR · TURN THE KEY</span>
-    </div>
+<main class="page">
+  <header class="top">
+    <h1 class="wordmark">NOISE</h1>
+    <p class="tag">Drop a song. Get phonk.</p>
   </header>
 
-  <div id="resume" class="resume" hidden>
-    <span class="resume__txt">An unsaved song from last time is still in the deck: <b id="resume-title"></b></span>
-    <button class="key key--hot" id="resume-yes">LOAD IT</button>
-    <button class="key" id="resume-no">FORGET IT</button>
-  </div>
-
-  <section id="transport" class="cluster" aria-label="Transport"></section>
-
-  <div class="stage">
-    <main id="rack" class="rack" aria-label="Device rack"></main>
-    <aside class="side" aria-label="Poster and master">
-      <div class="pinup">
-        <picture>
-          <source srcset="assets/art/pinup.webp" type="image/webp">
-          <img src="assets/art/pinup.jpg" width="821" height="1200" alt="Synthwave pin-up: a woman in a hot-pink bikini and mirrored aviators leaning on the Countach's open scissor door" loading="lazy">
-        </picture>
-        <div class="pinup__frame" aria-hidden="true"></div>
-        <div class="pinup__caption"><span>SIDE A</span><span>NO SAMPLES · NO SERVER · ALL SYNTH</span></div>
-      </div>
-      <section id="master" class="device device--master device--magenta" aria-label="Exhaust master"></section>
-    </aside>
-  </div>
-
-  <section id="lathe" class="device device--lathe device--cyan" aria-label="Chop shop"></section>
-
-  <section class="editor-shell">
-    <div id="editor-dock" class="editor-dock" hidden>
-      <span class="editor-dock__txt">The editor is riding in its own window.</span>
-      <button class="key">BRING IT BACK</button>
+  <!-- STAGE 1: intake -->
+  <section class="intake" id="intake" aria-label="Add a song">
+    <label class="drop" id="drop" for="file">
+      <input type="file" id="file" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4" hidden>
+      <span class="drop__big">DRAG A SONG IN</span>
+      <span class="drop__small">MP3, WAV, M4A, FLAC or a video file</span>
+      <span class="btn btn--hot drop__btn">BROWSE FILES</span>
+    </label>
+    <div class="or"><span>or paste a link</span></div>
+    <form class="link" id="linkform">
+      <input class="link__input" id="link" type="url" inputmode="url" placeholder="Paste a YouTube or Spotify link" autocomplete="off" spellcheck="false" aria-label="YouTube or Spotify link">
+      <button class="btn btn--ghost" type="submit">GO</button>
+    </form>
+    <div class="alt">
+      <button class="btn btn--ghost" id="mic" type="button"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v5a4 4 0 0 0 4 4zm-7-4h2a5 5 0 0 0 10 0h2a7 7 0 0 1-6 6.93V21h-2v-3.07A7 7 0 0 1 5 11z" fill="currentColor"/></svg>RECORD THE ROOM</button>
+      <button class="btn btn--ghost" id="try" type="button">TRY ONE: MAMIE SMITH, 1920</button>
     </div>
-    <div id="editor" aria-label="Pattern and song editor"></div>
+    <p class="fine">Everything happens in your browser. Nothing is uploaded anywhere.</p>
   </section>
 
-  <section id="manual" class="manual" aria-label="Manual">
-    <h2 class="manual__title">OWNER'S MANUAL</h2>
-    <div class="manual__cols">
-      <div class="manual__col">
-        <h3>Ignition</h3>
-        <p>Turn the <b>KEY</b>. The dash lights, the sun comes up, and COUNTACH DRIFT plays. Space plays and stops. Everything you hear is synthesized in your browser: no sample files, no account, no server.</p>
-        <h3>The devices</h3>
-        <p><b>V12</b> is the drum machine. The step grid is one bar of the current pattern (BAR 1 / BAR 2 pages the rest): tap a cell to write a hit, tap a lane's name to hear it. Tune a lane by right-clicking its name (shift for down), rolling the wheel over it, or with <b>TUNE −/+</b> in the editor toolbar. <b>MEMPHIS</b> crushes the kit toward a dubbed cassette.</p>
-        <p><b>TRUNK</b> is the 808: <b>DRIVE</b> pushes it through a clipper until the plate rattles. In the editor, shift-click a note (or select it and press <b>SLIDE</b>) to glide into it. <b>LAZERBELL</b> is the cowbell hook; <b>STACK</b> piles detuned bells, <b>GRIT</b> distorts them. <b>TALKBOX</b> chants formant syllables; turn <b>VOWEL</b> while it plays.</p>
-      </div>
-      <div class="manual__col">
-        <h3>Chopping</h3>
-        <p>The <b>CHOP SHOP</b> cuts tape. Drop any audio file on it, record the mic, or press <b>RESAMPLE SONG</b> to bounce the track itself (the loop if one is set, otherwise the first two bars). Cut by transients or evenly, drag cuts, click to add one, double-click to remove one, then <b>LOAD TO DECK</b>.</p>
-        <p>The <b>TAPE DECK</b> plays those slices: the reels spin, the counter climbs, and each slice lights its own segment. Shift-click a slice key to hear it reversed; in the editor shift-click a slice note, or select it and press <b>REVERSE</b>.</p>
-        <h3>Screw</h3>
-        <p>The <b>SCREW</b> lever slows and pitches every device at once, the way a tape deck losing battery would. It is saved with the song.</p>
-      </div>
-      <div class="manual__col">
-        <h3>Arranging</h3>
-        <p>The editor at the bottom has two tabs. <b>PATTERN</b> is a piano roll (or a step grid for drums and slices); tap a cell to write, tap a note to select, drag to move, drag its right edge to stretch. <b>SONG</b> lays pattern blocks across bars, one row per device. Wide grids scroll with the wheel, the scrollbar, or a finger. <b>DETACH</b> floats the editor in its own window; it stays in sync. <b>HOW</b> lists every gesture.</p>
-        <h3>Saving</h3>
-        <p><b>SAVE JSON</b> downloads the whole dash as one readable <code>.noise.json</code> file: tempo, every knob, every note, every block, and the deck's audio as base64 WAV. <b>OPEN</b> or drag the file back to continue. <b>WAV</b> renders a mixdown. An unsaved copy also stays in this browser.</p>
-        <p class="manual__fine">Format spec: <a href="format.html">noise-song v1</a>. Source: <a href="https://github.com/patpadgett/noise.patpadgett.com">github.com/patpadgett/noise.patpadgett.com</a>. Artwork generated in-house with Flux; provenance in <code>assets/art/PROVENANCE.md</code>. A Patrick Padgett project.</p>
+  <!-- STAGE 1b: link landed (YouTube / Spotify) -->
+  <section class="landed" id="landed" hidden aria-live="polite">
+    <div class="landed__card">
+      <img class="landed__thumb" id="landed-thumb" alt="" hidden>
+      <div class="landed__text">
+        <span class="landed__kind" id="landed-kind">YOUTUBE</span>
+        <span class="landed__title" id="landed-title">—</span>
+        <span class="landed__how" id="landed-how"></span>
       </div>
     </div>
+    <div class="yt" id="yt" hidden>
+      <div class="yt__frame"><div id="yt-player"></div></div>
+      <div class="yt__ctl">
+        <button class="btn btn--hot btn--big" id="yt-go" type="button">PHONK IT</button>
+        <button class="btn btn--ghost" id="yt-stop" type="button" hidden>STOP EARLY &amp; USE WHAT I HAVE</button>
+        <p class="fine" id="yt-hint">Press PHONK IT, then in the browser's dialog choose <b>this tab</b> and tick <b>Share tab audio</b>. The video plays through once while NOISE records it, then the phonk version is built.</p>
+      </div>
+    </div>
+    <div class="alt alt--one">
+      <button class="btn btn--ghost" id="landed-back" type="button">← BACK</button>
+    </div>
   </section>
-</div>
+
+  <!-- STAGE 2: working -->
+  <section class="work" id="work" hidden aria-live="polite">
+    <div class="work__title" id="work-title">LISTENING…</div>
+    <div class="work__bar"><i id="work-fill"></i></div>
+    <div class="work__msg" id="work-msg">finding the beat</div>
+    <div class="level" id="level" hidden><i></i></div>
+    <button class="btn btn--ghost" id="work-stop" type="button" hidden>STOP RECORDING</button>
+  </section>
+
+  <!-- STAGE 3: the phonk version -->
+  <section class="deck" id="deck" hidden>
+    <div class="now">
+      <div class="now__text">
+        <span class="now__kicker">PHONK VERSION</span>
+        <span class="now__title" id="now-title">—</span>
+        <span class="now__meta" id="now-meta"></span>
+      </div>
+      <button class="play" id="play" aria-label="Play or pause" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path class="ico-play" d="M7 4.5v15l12-7.5z" fill="currentColor"/><path class="ico-pause" d="M6 5h4v14H6zM14 5h4v14h-4z" fill="currentColor"/></svg>
+      </button>
+    </div>
+    <canvas class="scope" id="scope" aria-hidden="true"></canvas>
+    <div class="seek" id="seek" role="slider" aria-label="Position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0"><i id="seek-fill"></i></div>
+
+    <div class="presets" role="group" aria-label="Presets">
+      <button class="chip is-on" data-preset="drift">DRIFT</button>
+      <button class="chip" data-preset="memphis">MEMPHIS</button>
+      <button class="chip" data-preset="brazilian">BRAZILIAN</button>
+      <button class="chip chip--ghost" id="reroll" title="New drum and chop pattern">↻ REROLL</button>
+    </div>
+
+    <div class="sliders">
+      <label class="sl"><span class="sl__name">SLOW</span><input type="range" min="0.72" max="1" step="0.01" value="0.86" data-param="slow"><span class="sl__val" data-val="slow">86%</span></label>
+      <label class="sl"><span class="sl__name">808</span><input type="range" min="0" max="1.2" step="0.01" value="0.9" data-param="bass"><span class="sl__val" data-val="bass">90%</span></label>
+      <label class="sl"><span class="sl__name">COWBELL</span><input type="range" min="0" max="1.2" step="0.01" value="0.75" data-param="bell"><span class="sl__val" data-val="bell">75%</span></label>
+      <label class="sl"><span class="sl__name">GRIT</span><input type="range" min="0" max="1" step="0.01" value="0.55" data-param="grit"><span class="sl__val" data-val="grit">55%</span></label>
+      <label class="sl sl--flip"><span class="sl__name">FLIP</span><input type="range" min="0" max="1" step="0.01" value="0.15" data-param="flip"><span class="sl__val" data-val="flip">15%</span></label>
+    </div>
+
+    <div class="save">
+      <div class="save__fmt" role="radiogroup" aria-label="Format">
+        <label class="fmt"><input type="radio" name="fmt" value="mp3" checked><span>MP3</span></label>
+        <label class="fmt"><input type="radio" name="fmt" value="wav"><span>WAV</span></label>
+        <label class="fmt"><input type="radio" name="fmt" value="video"><span>VIDEO FOR REELS</span></label>
+      </div>
+      <button class="btn btn--hot btn--big" id="save">SAVE MP3</button>
+      <div class="save__prog" id="save-prog" hidden><i></i></div>
+    </div>
+
+    <div class="alt alt--one">
+      <button class="btn btn--ghost" id="another" type="button">ANOTHER SONG</button>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>A Patrick Padgett project · <a href="https://github.com/patpadgett/noise.patpadgett.com">source</a></span>
+    <span>Phonk your own songs or ones you have the rights to.</span>
+  </footer>
+</main>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<div class="dropzone" aria-hidden="true"><span>DROP A .noise.json TO OPEN IT · DROP AUDIO TO CUT IT IN THE CHOP SHOP</span></div>
+<div class="dropzone" aria-hidden="true"><span>DROP IT</span></div>
 
-<script type="module" src="js/app.js"></script>
+<script type="module" src="js/noise.js"></script>
 </body>
 </html>
