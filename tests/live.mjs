@@ -1,0 +1,33 @@
+// Live smoke against the deployed origin: demo loads from the CDN, cues render, clock runs, tally
+// hands off, no 4xx, no page errors, no overflow at 390. Run: BASE=https://noise.patpadgett.com node tests/live.mjs
+import { chromium } from 'playwright';
+const base = process.env.BASE || 'https://noise.patpadgett.com';
+const browser = await chromium.launch({ args: ['--no-sandbox', '--autoplay-policy=no-user-gesture-required'] });
+const errors = [];
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+page.on('response', (r) => { if (r.status() >= 400 && !/mp4-muxer/.test(r.url())) errors.push(`HTTP ${r.status()} ${r.url()}`); });
+await page.goto(base, { waitUntil: 'networkidle' });
+console.log('title:', await page.title());
+await page.click('#try');
+await page.waitForFunction(() => document.body.dataset.state === 'onair' && document.querySelectorAll('#ro-body tr').length > 10, null, { timeout: 120000 });
+const deck = await page.evaluate(() => ({ rows: document.querySelectorAll('#ro-body tr[data-n]').length, sections: document.querySelectorAll('#ro-body tr.ro__section').length, cost: document.querySelector('#render-cost').textContent, bpm: window.cue.analysis.bpm, lyricsHidden: document.querySelector('#lyrics-box').hidden }));
+console.log('deck:', JSON.stringify(deck));
+if (deck.rows < 20 || deck.sections < 3) errors.push('cue sheet incomplete');
+if (!deck.lyricsHidden) errors.push('lyrics box visible after treatment');
+await page.evaluate(() => window.cue.seek(28.5)); await page.click('#play'); await page.waitForTimeout(400);
+const snap = () => page.evaluate(() => ({ tc: document.querySelector('#tc').textContent, next: document.querySelector('#next').textContent, air: [...document.querySelectorAll('#ro-body tr.is-air')].map((r) => r.dataset.n), pgm: document.querySelector('#pgm').classList.contains('is-air') }));
+const s1 = await snap(); await page.waitForTimeout(2500); const s2 = await snap();
+console.log('t+0.4:', JSON.stringify(s1)); console.log('t+2.9:', JSON.stringify(s2));
+if (!(s2.tc > s1.tc)) errors.push('clock did not advance'); if (!s1.pgm) errors.push('PGM not on air'); if (JSON.stringify(s1.air) === JSON.stringify(s2.air)) errors.push('no tally handoff');
+const fonts = await page.evaluate(async () => { await document.fonts.ready; return [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family + ' ' + f.weight); });
+console.log('fonts loaded:', fonts.join(' | '));
+if (!fonts.some((f) => /Barlow/.test(f)) || !fonts.some((f) => /Archivo/.test(f))) errors.push('self-hosted fonts did not load');
+const m = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+m.on('pageerror', (e) => errors.push('mobile pageerror: ' + e.message));
+await m.goto(base + '/#demo', { waitUntil: 'networkidle' });
+await m.waitForFunction(() => document.body.dataset.state === 'onair', null, { timeout: 120000 });
+console.log('mobile overflow:', await m.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth));
+console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
+await browser.close();
+process.exit(errors.length ? 1 : 0);
