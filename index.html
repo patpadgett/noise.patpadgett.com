@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CUE — a music video from your song and lyrics</title>
+<meta name="description" content="Drop a song and paste its lyrics. CUE listens to the music, reads the words, writes a cue sheet a director would call, and renders a music video with every effect on the beat.">
+<meta property="og:title" content="CUE — a music video from your song and lyrics">
+<meta property="og:description" content="Listens to the music, reads the lyrics, writes the cues, renders the video.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#1c1f24">
+<link rel="preload" href="assets/fonts/barlow-condensed-normal-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/archivo-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="cue.css">
+</head>
+<body data-state="nosource">
+
+<header class="desk">
+  <h1 class="desk__name">CUE</h1>
+  <p class="desk__line">Your song goes on air. Drop the mix, paste the lyrics, read the running order, render.</p>
+  <button class="key key--ghost desk__setup" id="setup" type="button">SETUP</button>
+</header>
+
+<main class="gallery">
+
+  <!-- MONITOR WALL -->
+  <section class="wall" aria-label="Monitor wall">
+    <figure class="mon mon--pgm" id="pgm">
+      <div class="mon__tally" id="pgm-tally"><b>PGM</b><span id="pgm-label">NO SOURCE</span></div>
+      <div class="mon__screen">
+        <canvas id="screen" width="1280" height="720" aria-label="Program output"></canvas>
+        <video id="clip-a" muted playsinline preload="auto" hidden></video>
+        <video id="clip-b" muted playsinline preload="auto" hidden></video>
+        <div class="bars" id="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="mon__nosrc" id="nosrc">
+          <label class="load" for="file">
+            <span class="load__big">LOAD SONG</span>
+            <span class="load__small">MP3 · WAV · M4A · FLAC — or drop it anywhere</span>
+            <input type="file" id="file" accept="audio/*,.mp3,.wav,.m4a,.flac,.aac,.ogg" hidden>
+          </label>
+          <button class="key key--ghost" id="try" type="button">TRY THE DEMO · MAMIE SMITH, 1920</button>
+        </div>
+        <div class="mon__strobe" id="strobe-warn" hidden>STROBE EFFECTS IN THIS TREATMENT</div>
+      </div>
+      <figcaption class="mon__cap"><span id="pgm-scene">—</span><span id="pgm-src">—</span></figcaption>
+    </figure>
+    <div class="pvw" id="pvw" aria-label="Preview monitors: the next four scenes">
+      <figure class="mon mon--pvw" data-slot="0"><div class="mon__tally"><b>PVW</b><span>—</span></div><div class="mon__screen"><canvas width="320" height="180"></canvas></div><figcaption class="mon__cap"><span>—</span><span>—</span></figcaption></figure>
+      <figure class="mon mon--pvw" data-slot="1"><div class="mon__tally"><b>PVW</b><span>—</span></div><div class="mon__screen"><canvas width="320" height="180"></canvas></div><figcaption class="mon__cap"><span>—</span><span>—</span></figcaption></figure>
+      <figure class="mon mon--pvw" data-slot="2"><div class="mon__tally"><b>PVW</b><span>—</span></div><div class="mon__screen"><canvas width="320" height="180"></canvas></div><figcaption class="mon__cap"><span>—</span><span>—</span></figcaption></figure>
+      <figure class="mon mon--pvw" data-slot="3"><div class="mon__tally"><b>PVW</b><span>—</span></div><div class="mon__screen"><canvas width="320" height="180"></canvas></div><figcaption class="mon__cap"><span>—</span><span>—</span></figcaption></figure>
+    </div>
+  </section>
+
+  <!-- CLOCK STRIP -->
+  <section class="clock" aria-label="Clock">
+    <button class="key key--xport" id="play" type="button" aria-label="Play or pause" aria-pressed="false" disabled>
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path class="ico-play" d="M7 4.5v15l12-7.5z" fill="currentColor"/><path class="ico-pause" d="M6 5h4v14H6zM14 5h4v14h-4z" fill="currentColor"/></svg><span class="lbl">PLAY</span>
+    </button>
+    <div class="tc"><span class="tc__k">TC</span><b id="tc">00:00.0</b></div>
+    <div class="tc"><span class="tc__k">BAR</span><b id="bar">—</b></div>
+    <div class="tc tc--next"><span class="tc__k">NEXT CUE</span><b id="next">—</b></div>
+    <div class="tc tc--sec"><span class="tc__k">SECTION</span><b id="section">—</b></div>
+    <div class="tc tc--prog" id="prog-wrap" hidden><span class="tc__k" id="prog-k">LOADING</span><i class="prog"><b id="prog"></b></i></div>
+    <div class="clock__right">
+      <label class="switch" title="Swap strobes for slow pulses (photosensitivity)"><input type="checkbox" id="nostrobe"><span>NO STROBE</span></label>
+      <button class="key key--hot" id="render" type="button" disabled>RENDER <small id="render-cost"></small></button>
+    </div>
+  </section>
+
+  <!-- RUNNING ORDER -->
+  <section class="rundown" aria-label="Running order">
+    <header class="rundown__head">
+      <h2 class="rundown__title" id="rundown-title">RUNNING ORDER</h2>
+      <p class="rundown__treat" id="treatment"></p>
+      <div class="rundown__tools">
+        <button class="key key--ghost" id="edit-lyrics" type="button" hidden>LYRICS</button>
+        <button class="key key--ghost" id="rewrite" type="button" hidden>REWRITE TREATMENT</button>
+        <button class="key key--ghost" id="another" type="button" hidden>ANOTHER SONG</button>
+      </div>
+    </header>
+
+    <!-- lyrics intake (shows when a song is loaded and no lyrics yet, or on LYRICS) -->
+    <div class="lyrics" id="lyrics-box" hidden>
+      <label for="lyrics">Paste the lyrics. Blank line between stanzas. Repeated stanzas tell CUE where the chorus is.</label>
+      <textarea id="lyrics" rows="10" spellcheck="false" placeholder="Verse one…&#10;&#10;Chorus…"></textarea>
+      <div class="lyrics__row">
+        <span class="lyrics__count" id="lyrics-count">0 lines</span>
+        <button class="key key--hot" id="go" type="button">WRITE THE CUES</button>
+      </div>
+    </div>
+
+    <table class="ro" id="ro">
+      <thead><tr><th class="ro__n">#</th><th class="ro__in">IN</th><th class="ro__cue">CUE</th><th class="ro__src">SRC</th><th class="ro__dur">DUR</th><th class="ro__tally"><span class="sr">Tally</span></th></tr></thead>
+      <tbody id="ro-body"></tbody>
+    </table>
+    <p class="ro__empty" id="ro-empty">No running order. Load a song and paste its lyrics, or try the demo.</p>
+  </section>
+
+  <!-- RENDER DESK (hidden until RENDER) -->
+  <section class="renderdesk" id="renderdesk" hidden aria-label="Render">
+    <header class="renderdesk__head">
+      <h2 class="rundown__title">FOOTAGE</h2>
+      <p class="renderdesk__line" id="render-line"></p>
+      <div class="renderdesk__fmt" role="radiogroup" aria-label="Export format">
+        <label class="fmt"><input type="radio" name="fmt" value="16:9" checked><span>16:9 · YOUTUBE</span></label>
+        <label class="fmt"><input type="radio" name="fmt" value="9:16"><span>9:16 · REELS</span></label>
+      </div>
+    </header>
+    <ol class="jobs" id="jobs"></ol>
+    <div class="renderdesk__row">
+      <button class="key key--ghost" id="render-cancel" type="button">STOP</button>
+      <button class="key key--hot" id="export" type="button" disabled>EXPORT VIDEO</button>
+      <span class="renderdesk__note" id="export-note"></span>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>A Patrick Padgett project · <a href="https://github.com/patpadgett/noise.patpadgett.com">source</a></span>
+  <span>Use songs you have the rights to. Footage is generated by Sora 2 on Azure; your audio never leaves your browser.</span>
+</footer>
+
+<!-- SETUP -->
+<dialog class="setupdlg" id="setupdlg">
+  <form method="dialog" class="setup">
+    <h2 class="rundown__title">SETUP</h2>
+    <p class="setup__line">CUE calls Azure from your browser. Keys stay in this browser's storage and are never sent anywhere but Microsoft.</p>
+    <fieldset class="setup__mode">
+      <label class="fmt"><input type="radio" name="mode" value="direct" checked><span>MY AZURE KEYS</span></label>
+      <label class="fmt"><input type="radio" name="mode" value="proxy"><span>SITE PROXY</span></label>
+    </fieldset>
+    <div class="setup__grid" id="setup-direct">
+      <label>Azure OpenAI endpoint<input name="openaiEndpoint" type="url" placeholder="https://your-resource.openai.azure.com" autocomplete="off"></label>
+      <label>Azure OpenAI key<input name="openaiKey" type="password" autocomplete="off"></label>
+      <label>Chat deployment<input name="chatDeployment" placeholder="gpt-6-astra" autocomplete="off"></label>
+      <label>Video deployment<input name="videoDeployment" placeholder="sora-2" autocomplete="off"></label>
+      <label>Speech region<input name="speechRegion" placeholder="eastus" autocomplete="off"></label>
+      <label>Speech key<input name="speechKey" type="password" autocomplete="off"></label>
+    </div>
+    <p class="setup__probe" id="probe"></p>
+    <div class="setup__row">
+      <button class="key key--ghost" type="button" id="setup-test">TEST</button>
+      <button class="key key--ghost" type="button" id="setup-forget">FORGET KEYS</button>
+      <button class="key key--hot" value="save" id="setup-save">SAVE</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="dropzone" id="dropzone"><span>DROP THE SONG</span></div>
+
+<script type="module" src="js/cue.js"></script>
+</body>
+</html>

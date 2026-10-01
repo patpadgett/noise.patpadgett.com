@@ -1,0 +1,5 @@
+{
+  "navigationFallback": { "rewrite": "/index.html", "exclude": ["/assets/*", "/js/*", "/vendor/*", "/*.css", "/*.svg"] },
+  "globalHeaders": { "Cross-Origin-Opener-Policy": "same-origin" },
+  "platform": { "apiRuntime": "node:20" }
+}
