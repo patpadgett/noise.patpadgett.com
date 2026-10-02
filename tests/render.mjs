@@ -55,12 +55,20 @@ const textCalls = await page.evaluate(async () => { const { drawFrame } = await 
 console.log('text draw calls over footage:', textCalls);
 if (textCalls !== 0) errors.push('text was drawn over footage');
 
+// ---- 0b. the cap is on length, never on count: a 40-bar scene fed to setTreatment comes out as 7 scenes ----
+const capCheck = await page.evaluate(async () => { const { normalizeTreatment, maxSceneBars } = await import('./js/switcher.js'); const a = window.cue.analysis; const t = normalizeTreatment({ cues: [{ n: 1, kind: 'scene', in: 1, beat: 1, bars: 40, anchor: 'x', cue: 'y', shot: 'z', effect: 'none', rate: 0, color: '' }] }, a); return { pieces: t.cues.length, bars: t.cues.map((c) => c.bars), maxBars: maxSceneBars(a) }; });
+console.log('cap:', JSON.stringify(capCheck));
+if (!(capCheck.pieces === Math.ceil(40 / capCheck.maxBars) && capCheck.bars.every((b) => b <= capCheck.maxBars) && capCheck.bars.reduce((s, b) => s + b, 0) === 40)) errors.push('over-long scene not split to the cap');
+
 // ---- 1. every planned clip length is one Sora accepts; cost line agrees ----
-const plan = await page.evaluate(async () => { const { clipSeconds, estimateCost, CLIP_LENGTHS } = await import('./js/azure.js'); const a = window.cue.analysis, beat = 60 / a.bpm; return { lengths: window.cue.tl.scenes.map((s) => clipSeconds(s, beat)), est: estimateCost(window.cue.treatment, a), allowed: CLIP_LENGTHS, cost: document.querySelector('#render-cost').textContent }; });
-console.log('plan:', JSON.stringify(plan));
+const plan = await page.evaluate(async () => { const { clipSeconds, estimateCost, CLIP_LENGTHS } = await import('./js/azure.js'); const { maxSceneBars } = await import('./js/switcher.js'); const a = window.cue.analysis, beat = 60 / a.bpm; return { lengths: window.cue.tl.scenes.map((s) => clipSeconds(s, beat)), byN: Object.fromEntries(window.cue.tl.scenes.map((s) => [s.n, clipSeconds(s, beat)])), est: estimateCost(window.cue.treatment, a), allowed: CLIP_LENGTHS, cost: document.querySelector('#render-cost').textContent, maxBars: maxSceneBars(a), longestBars: Math.max(...window.cue.tl.scenes.map((s) => s.bars)), barsCovered: window.cue.tl.scenes.reduce((s, c) => s + c.bars, 0), bars: a.barStarts.length }; });
+console.log('plan:', JSON.stringify({ scenes: plan.lengths.length, est: plan.est, cost: plan.cost, maxBars: plan.maxBars, longestBars: plan.longestBars, covered: `${plan.barsCovered}/${plan.bars}` }));
 if (!plan.lengths.every((s) => plan.allowed.includes(s))) errors.push('a planned clip length is not 4/8/12');
 if (!plan.cost.startsWith('$' + plan.est.dollars.toFixed(2))) errors.push('RENDER key cost disagrees with estimateCost');
-const N = plan.lengths.length;
+if (plan.longestBars > plan.maxBars) errors.push(`a scene is longer than the cap (${plan.longestBars} > ${plan.maxBars} bars)`);
+if (plan.barsCovered < plan.bars) errors.push('scenes do not cover every bar');
+if (plan.lengths.length < 20) errors.push(`only ${plan.lengths.length} scenes: the count must not be capped`);
+const N = plan.lengths.length, FAIL_SECS = plan.byN[3];
 
 // ---- 2. render against the mock; tag prompts with the scene number so the mock can pick a victim ----
 await page.evaluate(() => { for (const s of window.cue.tl.scenes) s.shot = `SCENE_${s.n} ` + s.shot; });
@@ -80,7 +88,7 @@ if (!/1 failed/.test(after1.line)) errors.push('status line does not count the f
 if (!after1.states.find((s) => s.n === '3')?.title.includes('real people')) errors.push('failure reason missing from the tile tooltip');
 if (after1.key !== 'RETRY FAILED') errors.push('key did not become RETRY FAILED');
 if (after1.clips !== N - 1) errors.push(`expected ${N - 1} clips, got ${after1.clips}`);
-if (after1.spent !== plan.est.seconds - 12) errors.push(`spent ${after1.spent}s; a create rejected with a 400 costs nothing, so expected ${plan.est.seconds - 12}s`);
+if (after1.spent !== plan.est.seconds - FAIL_SECS) errors.push(`spent ${after1.spent}s; a create rejected with a 400 costs nothing, so expected ${plan.est.seconds - FAIL_SECS}s`);
 if (!after1.states.every((s) => s.redoShown)) errors.push('RETAKE key missing from a tile');
 if (!after1.states.every((s) => s.redoEnabled)) errors.push('RETAKE key not lit on a finished or failed tile');
 if (after1.rowRedo === 'none') errors.push('RETAKE key not shown on running-order VT rows while the desk is open');
@@ -124,7 +132,7 @@ if (!requests[requests.length - 1].prompt.startsWith(`SCENE_${target.n} `)) erro
 if (after3.urlAfter === target.urlBefore) errors.push('retake did not replace the clip');
 if (!after3.otherSame) errors.push('retake disturbed another scene\'s clip');
 if (after3.take !== 1 || !/take 2/.test(after3.state)) errors.push('tile does not say take 2');
-if (!after3.line.includes(`$${((plan.est.seconds + 12) * 0.10).toFixed(2)} spent`)) errors.push(`spent line did not add the retake: ${after3.line}`);
+if (!after3.line.includes(`$${((plan.est.seconds + plan.byN[target.n]) * 0.10).toFixed(2)} spent`)) errors.push(`spent line did not add the retake: ${after3.line}`);
 
 // ---- 6. a fresh desk (new format) + STOP: nothing new starts; RENDER THE REST resumes; RETAKE works while stopped ----
 pollsToFinish = 6; // slower jobs so STOP lands mid-render

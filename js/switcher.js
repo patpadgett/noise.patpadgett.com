@@ -27,6 +27,28 @@ export function timeline(treatment, analysis) {
   const scenes = cues.filter((c) => c.kind === 'scene');
   return { cues, scenes, lights: cues.filter((c) => c.kind === 'light') };
 }
+// A scene is capped in length, never in number. The cap is the longest Sora clip (12 s) plus the 10% slow-motion
+// slack clipSeconds allows; a scene the model still wrote longer is split into consecutive scenes of the same shot
+// from a new angle, and the cues are renumbered in time order. Lyric cues (older sheets) are dropped here too.
+export const MAX_SCENE_SECONDS = 12 * 1.1;
+export function maxSceneBars(analysis) { return Math.max(1, Math.floor(MAX_SCENE_SECONDS / (4 * 60 / analysis.bpm))); }
+export function normalizeTreatment(tr, analysis) {
+  const maxBars = maxSceneBars(analysis), out = [];
+  for (const c of tr.cues || []) {
+    if (c.kind === 'lyric') continue;
+    if (c.kind !== 'scene' || !(c.bars > maxBars)) { out.push({ ...c }); continue; }
+    let left = c.bars, k = 0;
+    while (left > 1e-6) {
+      const bars = Math.min(maxBars, left);
+      out.push({ ...c, in: c.in + k * maxBars, bars: +bars.toFixed(3), cue: k ? `${c.cue} (continued)` : c.cue, anchor: k ? `${c.anchor} · continued` : c.anchor, shot: k ? `${c.shot} Same setting and subject, a new angle.` : c.shot });
+      left -= bars; k++;
+    }
+  }
+  const rank = (c) => (c.kind === 'scene' ? 0 : 1);
+  out.sort((a, b) => cueStart(analysis, a) - cueStart(analysis, b) || rank(a) - rank(b) || a.n - b.n);
+  out.forEach((c, i) => { c.n = i + 1; });
+  return { ...tr, cues: out };
+}
 export function sceneAt(tl, t) { let s = null; for (const c of tl.scenes) { if (c.start <= t) s = c; else break; } return s; }
 // Clips are 4, 8 or 12 s and scenes are not. A clip shorter than its scene plays slowed so it covers the
 // scene exactly (rate = clip / scene, never above 1); a clip longer than its scene is simply cut at the OUT.

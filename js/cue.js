@@ -1,7 +1,7 @@
 // CUE — the controller. One screen, three states: nosource → onair → render.
 import { loadConfig, saveConfig, configured, probe, transcribe, writeTreatment, estimateCost } from './azure.js';
 import { alignLyrics, flattenWords, stanzas } from './align.js';
-import { timeline, sceneAt, nextCue, drawFrame, barAt, barTime, fmtTC, fmtIn, fmtCountdown, clipRate, clipTime } from './switcher.js';
+import { timeline, sceneAt, nextCue, drawFrame, barAt, barTime, fmtTC, fmtIn, fmtCountdown, clipRate, clipTime, normalizeTreatment } from './switcher.js';
 import { FootageJob, exportVideo, download, busy } from './footage.js';
 import { DEMO_TITLE, DEMO_LYRICS } from './demo-lyrics.js';
 
@@ -126,10 +126,12 @@ class App {
       this.progress('WRITING THE CUES', 0.6);
       const { treatment } = await writeTreatment({ title: this.title, analysis: this.analysis, lyrics: this.lyrics, aligned: this.aligned, direction: this.direction }, { signal: ctl.signal });
       this.progress(null); $('#lyrics-box').hidden = true;
-      this.setTreatment(treatment); this.toast(`${treatment.cues.length} cues written${this.direction ? ' to your direction' : ''}.`);
+      this.setTreatment(treatment); this.toast(`${this.treatment.cues.length} cues written, ${this.tl.scenes.length} scenes${this.direction ? ', to your direction' : ''}.`);
     } catch (e) { console.error(e); this.progress(null); this.toast('Could not write the cues: ' + e.message, true); }
   }
   setTreatment(tr) {
+    // scenes are capped in length (one Sora clip), never in number: anything longer is split here before it reaches the desk
+    tr = normalizeTreatment(tr, this.analysis);
     this.treatment = tr; this.tl = timeline(tr, this.analysis); $('#lyrics-box').hidden = true;
     $('#treatment').textContent = tr.title_treatment; $('#rewrite').hidden = false;
     $('#strobe-warn').hidden = !tr.strobe_warning && !tr.cues.some((c) => c.kind === 'light' && c.effect === 'strobe');

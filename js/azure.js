@@ -45,10 +45,12 @@ export async function writeTreatment({ title, analysis, lyrics, aligned, directi
   const body = {
     model: cfg.chatDeployment || 'gpt-6-astra',
     reasoning: { effort: 'low' },
+    max_output_tokens: 32768, // a long song with one-bar scenes is 80+ cues at ~200 tokens each; never let the default cut the sheet short
     input: [{ role: 'system', content: TREATMENT_SYSTEM }, { role: 'user', content: treatmentUserMessage({ title, analysis, lyrics, aligned, direction }) }],
     text: { format: { type: 'json_schema', name: 'treatment', strict: true, schema: TREATMENT_SCHEMA } },
   };
   const d = await j(await fetch(url, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }));
+  if (d.status === 'incomplete') throw new Error(`The treatment was cut off before the end (${d.incomplete_details?.reason || 'incomplete'}). Press REWRITE TREATMENT to try again.`);
   const text = (d.output || []).flatMap((o) => o.content || []).find((c) => c.type === 'output_text')?.text;
   if (!text) throw new Error('The treatment came back empty.');
   return { treatment: JSON.parse(text), usage: d.usage };
