@@ -9,38 +9,58 @@ const DB = 'cue-clips-v1';
 function db() { return new Promise((res, rej) => { const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore('clips'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 export async function getClip(key) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips').objectStore('clips').get(key); t.onsuccess = () => res(t.result || null); t.onerror = () => res(null); }); }
 export async function putClip(key, blob, meta) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips', 'readwrite').objectStore('clips').put({ blob, meta, at: Date.now() }, key); t.onsuccess = () => res(); t.onerror = () => res(); }); }
-export const clipKey = (songId, scene, size) => `${songId}:${scene.n}:${size}:${hash(scene.shot)}`;
+export async function deleteClip(key) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips', 'readwrite').objectStore('clips').delete(key); t.onsuccess = () => res(); t.onerror = () => res(); }); }
+// A clip is keyed by what produced it: song, scene, frame size, and the exact prompt (shot + direction). Edit the
+// shot or the direction and the key changes, so the next RENDER pays for that scene again and no other.
+export const clipKey = (songId, scene, size, direction = '') => `${songId}:${scene.n}:${size}:${hash(scene.shot + '\n' + String(direction || '').trim())}`;
 function hash(s) { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
 
 // ---- the render job: every scene → one clip, two in flight ----
+// stopped = start nothing new; clips already in flight finish (Azure bills them the moment they are created,
+// so abandoning them would only lose footage). detach() hands the pool off silently when the desk is replaced.
 export class FootageJob {
-  constructor({ songId, scenes, analysis, size, onUpdate }) {
-    Object.assign(this, { songId, scenes, analysis, size, onUpdate });
-    this.items = scenes.map((s) => ({ scene: s, state: 'queued', progress: 0, id: null, blob: null, url: null, error: null, seconds: clipSeconds(s, 60 / analysis.bpm) }));
-    this.cancelled = false; this.inflight = 0; this.MAX = 2;
+  constructor({ songId, scenes, analysis, size, direction = '', onUpdate }) {
+    Object.assign(this, { songId, scenes, analysis, size, direction, onUpdate });
+    this.items = scenes.map((s) => ({ scene: s, state: 'queued', progress: 0, id: null, blob: null, url: null, error: null, cached: false, retake: 0, seconds: clipSeconds(s, 60 / analysis.bpm) }));
+    this.stopped = false; this.inflight = 0; this.MAX = 2;
   }
   async start() {
     // anything already in the cache lands instantly
-    for (const it of this.items) { const c = await getClip(clipKey(this.songId, it.scene, this.size)); if (c) { it.blob = c.blob; it.url = URL.createObjectURL(c.blob); it.state = 'done'; it.progress = 1; it.cached = true; } }
+    for (const it of this.items) { const c = await getClip(this.key(it)); if (c) { it.blob = c.blob; it.url = URL.createObjectURL(c.blob); it.state = 'done'; it.progress = 1; it.cached = true; } }
     this.emit(); this.pump();
   }
+  key(it) { return clipKey(this.songId, it.scene, this.size, this.direction); }
   emit() { this.onUpdate && this.onUpdate(this); }
   get done() { return this.items.every((i) => i.state === 'done' || i.state === 'failed'); }
-  // what Azure has been asked to generate: everything that got a job id (a create rejected with a 400 cost nothing)
-  get spent() { return this.items.filter((i) => i.state !== 'queued' && !i.cached && (i.state !== 'failed' || i.id)).reduce((s, i) => s + i.seconds, 0); }
+  get queued() { return this.items.filter((i) => i.state === 'queued').length; }
+  // what Azure has been asked to generate, every attempt counted: a create that got a job id is billed, a create
+  // rejected with a 400 is not; a retake of a finished scene bills again
+  get spent() { return this.items.reduce((s, i) => s + (i.billed || 0), 0); }
+  get attempted() { return this.items.some((i) => i.state !== 'queued' && !i.cached); }
   pump() {
-    if (this.cancelled) return;
-    while (this.inflight < this.MAX) { const next = this.items.find((i) => i.state === 'queued'); if (!next) break; this.run(next); }
-    if (this.done) this.emit();
+    if (!this.stopped) while (this.inflight < this.MAX) { const next = this.items.find((i) => i.state === 'queued'); if (!next) break; this.run(next); }
+    if (this.done || (this.stopped && !this.inflight)) this.emit();
+  }
+  // RENDER again on the same desk: failures go back in the queue, the pool resumes. Done clips are not touched.
+  resume() { for (const it of this.items) if (it.state === 'failed') Object.assign(it, { state: 'queued', progress: 0, id: null, error: null }); this.stopped = false; this.emit(); this.pump(); }
+  // Another take of ONE scene: forget its cached clip and queue it again; nothing else is touched or paid for.
+  // On a running pool it joins the queue; on a finished pool it restarts the pump; on a stopped pool it runs alone.
+  async retake(n) {
+    const it = this.items.find((i) => i.scene.n === n); if (!it || busy(it)) return false;
+    await deleteClip(this.key(it));
+    if (it.url) URL.revokeObjectURL(it.url);
+    Object.assign(it, { state: 'queued', progress: 0, id: null, blob: null, url: null, error: null, cached: false, retake: it.retake + 1 });
+    this.emit();
+    if (this.stopped) { while (this.inflight >= this.MAX) await sleep(500); if (it.state === 'queued') this.run(it); } else this.pump();
+    return true;
   }
   async run(it) {
     this.inflight++; it.state = 'creating'; this.emit();
     try {
-      const prompt = soraPrompt(it.scene, this.size);
+      const prompt = soraPrompt(it.scene, this.size, this.direction);
       const v = await createVideo({ prompt, size: this.size, seconds: it.seconds });
-      it.id = v.id; it.state = 'running'; this.emit();
+      it.id = v.id; it.billed = (it.billed || 0) + it.seconds; it.state = 'running'; this.emit();
       for (;;) {
-        if (this.cancelled) return;
         await sleep(4000);
         const s = await videoStatus(it.id);
         it.progress = (s.progress || 0) / 100; this.emit();
@@ -49,21 +69,26 @@ export class FootageJob {
       }
       it.state = 'downloading'; this.emit();
       const blob = await downloadVideo(it.id);
+      await putClip(this.key(it), blob, { id: it.id, prompt, seconds: it.seconds, size: this.size, at: Date.now() });
+      // 'done' means everything is done, cache included; the emit in finally follows with no await between
       it.blob = blob; it.url = URL.createObjectURL(blob); it.state = 'done'; it.progress = 1;
-      await putClip(clipKey(this.songId, it.scene, this.size), blob, { id: it.id, prompt, seconds: it.seconds, size: this.size, at: Date.now() });
     } catch (e) {
       it.state = 'failed'; it.error = e.message;
     } finally { this.inflight--; this.emit(); this.pump(); }
   }
-  cancel() { this.cancelled = true; }
+  stop() { this.stopped = true; this.emit(); }
+  cancel() { this.stop(); }
+  detach() { this.stopped = true; this.onUpdate = null; }
 }
+export const busy = (it) => it.state === 'creating' || it.state === 'running' || it.state === 'downloading';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Sora 2's content rules bind the prompt: no real people, brands or copyrighted characters, no text. The
-// treatment prompt already writes shots that way; this adds the frame and the house style.
-export function soraPrompt(scene, size) {
+// treatment prompt already writes shots that way; this adds the artist's direction, the frame and the house style.
+export function soraPrompt(scene, size, direction = '') {
   const frame = size === '720x1280' ? 'vertical 9:16 frame composed for a phone screen' : 'cinematic 16:9 frame';
-  return `${scene.shot} ${frame}, no on-screen text, no captions, no logos, no real people's faces in close-up.`;
+  const dir = String(direction || '').trim();
+  return `${scene.shot}${dir ? ` Setting and look: ${dir}.` : ''} ${frame}, no on-screen text, no captions, no logos, no real people's faces in close-up.`;
 }
 
 // ---- export: draw every frame, encode ----

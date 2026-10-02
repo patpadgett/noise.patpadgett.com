@@ -1,7 +1,7 @@
 // CUE — the switcher. Executes a cue sheet against the song clock on a canvas: cuts between clips
-// at bar boundaries, runs light cues (strobe/pulse/flash/wash/blackout/flicker) locked to the beat
-// grid, burns lyrics in. Pure function of (time, cues, assets) so the same code draws the live
-// PGM monitor, the PVW thumbnails (at a future time) and every frame of the export.
+// at bar boundaries and runs light cues (strobe/pulse/flash/wash/blackout/flicker) locked to the beat
+// grid. Pure function of (time, cues, assets) so the same code draws the live PGM monitor, the PVW
+// thumbnails (at a future time) and every frame of the export. Nothing is ever written over the picture.
 
 export function barTime(analysis, bar, beat = 1) {
   // bar is 1-based; returns seconds. Past the last measured bar, extrapolate at the tempo.
@@ -22,9 +22,10 @@ export function cueStart(analysis, c) { return barTime(analysis, c.in, c.beat ||
 export function cueEnd(analysis, c) { return barTime(analysis, c.in + Math.floor(c.bars), 1 + ((c.bars % 1) * 4)); }
 
 export function timeline(treatment, analysis) {
-  const cues = treatment.cues.map((c) => ({ ...c, start: cueStart(analysis, c), end: cueEnd(analysis, c) })).sort((a, b) => a.start - b.start || a.n - b.n);
+  // 'lyric' cues from older cue sheets are dropped: the video carries no text
+  const cues = treatment.cues.filter((c) => c.kind !== 'lyric').map((c) => ({ ...c, start: cueStart(analysis, c), end: cueEnd(analysis, c) })).sort((a, b) => a.start - b.start || a.n - b.n);
   const scenes = cues.filter((c) => c.kind === 'scene');
-  return { cues, scenes, lights: cues.filter((c) => c.kind === 'light'), lyrics: cues.filter((c) => c.kind === 'lyric') };
+  return { cues, scenes, lights: cues.filter((c) => c.kind === 'light') };
 }
 export function sceneAt(tl, t) { let s = null; for (const c of tl.scenes) { if (c.start <= t) s = c; else break; } return s; }
 // Clips are 4, 8 or 12 s and scenes are not. A clip shorter than its scene plays slowed so it covers the
@@ -59,7 +60,7 @@ function hex(h, a = 1) { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); if (!m) r
 // ---- draw one frame -------------------------------------------------------------------------
 // ctx: 2d context sized to W×H. clipFor(scene) returns a drawable (HTMLVideoElement/ImageBitmap/null)
 // positioned at the right media time by the caller. palette from the treatment colours the fallback.
-export function drawFrame(ctx, W, H, t, tl, analysis, { clipFor, noStrobe = false, freezeLights = false, palette = ['#222'], stanzas = [], showLyrics = true, showShot = true, fontClock = "'Barlow Condensed'", fontText = 'Archivo' }) {
+export function drawFrame(ctx, W, H, t, tl, analysis, { clipFor, noStrobe = false, freezeLights = false, palette = ['#222'], showShot = true, fontClock = "'Barlow Condensed'", fontText = 'Archivo' }) {
   const scene = sceneAt(tl, t);
   const src = scene ? clipFor(scene) : null;
   ctx.save(); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
@@ -95,24 +96,6 @@ export function drawFrame(ctx, W, H, t, tl, analysis, { clipFor, noStrobe = fals
     ctx.globalCompositeOperation = 'source-over';
   }
   if (black > 0) { ctx.fillStyle = `rgba(0,0,0,${black})`; ctx.fillRect(0, 0, W, H); }
-  // lyrics
-  if (showLyrics) for (const c of activeAt(tl.lyrics, t)) {
-    const el = t - c.start, len = c.end - c.start, lines = String(c.lines || '').split('\n').filter(Boolean);
-    const size = Math.round(H * (c.style === 'slam' ? 0.085 : c.style === 'whisper' ? 0.034 : 0.05));
-    ctx.font = `${c.style === 'slam' ? 700 : c.style === 'whisper' ? 400 : 600} ${size}px ${c.style === 'slam' ? fontClock : fontText}`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    let alpha = 1; if (c.style === 'whisper') alpha = 0.72; const fadeOut = Math.min(1, (len - el) / 0.4); alpha *= Math.min(1, fadeOut);
-    lines.forEach((line, i) => {
-      let text = line;
-      if (c.style === 'typewriter') { const chars = Math.floor(Math.min(1, el / Math.min(len * 0.6, 2.2)) * line.length); text = line.slice(0, chars); }
-      if (c.style === 'slam' && el < 0.12) { ctx.save(); const k = 1 + (0.12 - el) * 2.5; ctx.translate(W / 2, H * 0.5); ctx.scale(k, k); ctx.translate(-W / 2, -H * 0.5); }
-      const y = c.style === 'slam' ? H * 0.5 + (i - (lines.length - 1) / 2) * size * 1.1 : H * 0.84 + i * size * 1.25;
-      ctx.lineWidth = Math.max(2, size * 0.08); ctx.strokeStyle = `rgba(0,0,0,${0.55 * alpha})`; ctx.lineJoin = 'round';
-      ctx.strokeText(text, W / 2, y); ctx.fillStyle = `rgba(255,255,255,${alpha})`; ctx.fillText(text, W / 2, y);
-      if (c.style === 'slam' && el < 0.12) ctx.restore();
-    });
-    ctx.textAlign = 'left';
-  }
   ctx.restore();
   return scene;
 }

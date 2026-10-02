@@ -2,7 +2,7 @@
 import { loadConfig, saveConfig, configured, probe, transcribe, writeTreatment, estimateCost } from './azure.js';
 import { alignLyrics, flattenWords, stanzas } from './align.js';
 import { timeline, sceneAt, nextCue, drawFrame, barAt, barTime, fmtTC, fmtIn, fmtCountdown, clipRate, clipTime } from './switcher.js';
-import { FootageJob, exportVideo, download, getClip, clipKey } from './footage.js';
+import { FootageJob, exportVideo, download, busy } from './footage.js';
 import { DEMO_TITLE, DEMO_LYRICS } from './demo-lyrics.js';
 
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -42,8 +42,11 @@ class App {
     $('#rewrite').addEventListener('click', () => this.writeCues());
     $('#another').addEventListener('click', () => this.reset());
     $('#render').addEventListener('click', () => this.render());
-    $('#render-cancel').addEventListener('click', () => { this.job?.cancel(); $('#render-line').textContent = 'Stopped. Finished clips are kept.'; });
+    $('#render-cancel').addEventListener('click', () => this.job?.stop());
     $('#export').addEventListener('click', () => this.export());
+    // another take of one scene, from its tile or its row; nothing else is re-rendered or paid for
+    $('#jobs').addEventListener('click', (e) => { const b = e.target.closest('.job__redo'); if (b) this.retake(+b.closest('.job').dataset.n); });
+    $('#ro-body').addEventListener('click', (e) => { const b = e.target.closest('.redo'); if (b) { e.stopPropagation(); this.retake(+b.closest('tr').dataset.n); } });
     $$('input[name=fmt]').forEach((r) => r.addEventListener('change', () => this.setFormat(r.value)));
     $('#nostrobe').addEventListener('change', () => this.updateCost());
     // setup dialog
@@ -53,7 +56,7 @@ class App {
     $('#setupdlg').addEventListener('close', () => { if ($('#setupdlg').returnValue === 'save') { this.readSetupForm(); this.toast('Saved in this browser only.'); } });
     $$('input[name=mode]').forEach((r) => r.addEventListener('change', () => { $('#setup-direct').hidden = r.value === 'proxy' && r.checked; }));
     // running order: click a row to seek; edit a cue sentence inline
-    $('#ro-body').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-start]'); if (!tr || e.target.isContentEditable) return; this.seek(+tr.dataset.start); });
+    $('#ro-body').addEventListener('click', (e) => { if (e.target.closest('.redo')) return; const tr = e.target.closest('tr[data-start]'); if (!tr || e.target.isContentEditable) return; this.seek(+tr.dataset.start); });
     $('#ro-body').addEventListener('input', (e) => { const td = e.target.closest('.cue[contenteditable]'); if (!td) return; const c = this.treatment.cues.find((x) => x.n === +td.closest('tr').dataset.n); if (c) c.cue = td.textContent.trim(); });
     $('#pvw').addEventListener('click', (e) => { const fig = e.target.closest('.mon--pvw'); if (fig && fig.dataset.start) this.seek(+fig.dataset.start); });
   }
@@ -79,7 +82,7 @@ class App {
   }
   progress(label, p) { const w = $('#prog-wrap'); if (label == null) { w.hidden = true; return; } w.hidden = false; $('#prog-k').textContent = label; $('#prog').style.width = Math.round(p * 100) + '%'; }
   async loadAudio(arrayBuffer, name, demo = null) {
-    this.stop(); this.setState('nosource'); this.treatment = null; this.tl = null; this.analysis = null; this.clips.clear(); this.job = null; $('#renderdesk').hidden = true;
+    this.stop(); this.setState('nosource'); this.treatment = null; this.tl = null; this.analysis = null; this.clips.clear(); if (this.job) { this.job.detach(); this.job = null; } $('#renderdesk').hidden = true; this.resetRenderKey();
     this.progress('DECODING', 0.1);
     const ctx = this.ensureCtx();
     this.buffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
@@ -94,8 +97,8 @@ class App {
     this.progress(null);
     $('#pgm-label').textContent = this.title; $('#rundown-title').textContent = 'RUNNING ORDER';
     $('#play').disabled = false; $('#another').hidden = false; $('#edit-lyrics').hidden = false;
-    if (demo) { this.lyrics = demo.lyrics; this.aligned = demo.aligned; $('#lyrics').value = demo.lyrics; $('#lyrics').dispatchEvent(new Event('input')); this.setTreatment(demo.treatment); this.toast('Demo cue sheet loaded. Press play; the footage renders on RENDER.'); }
-    else { this.setState('onair'); $('#lyrics-box').hidden = false; $('#lyrics').value = ''; $('#lyrics').focus(); this.renderRundown(); this.toast(`Found ${Math.round(this.analysis.bpm)} BPM in ${this.analysis.keyName}, ${bars.length} bars. Paste the lyrics.`); }
+    if (demo) { this.lyrics = demo.lyrics; this.aligned = demo.aligned; this.direction = demo.direction || ''; $('#lyrics').value = demo.lyrics; $('#direction').value = this.direction; $('#lyrics').dispatchEvent(new Event('input')); this.setTreatment(demo.treatment); this.toast('Demo cue sheet loaded. Press play; the footage renders on RENDER.'); }
+    else { this.setState('onair'); $('#lyrics-box').hidden = false; $('#lyrics').value = ''; $('#direction').value = ''; this.direction = ''; $('#lyrics').focus(); this.renderRundown(); this.toast(`Found ${Math.round(this.analysis.bpm)} BPM in ${this.analysis.keyName}, ${bars.length} bars. Paste the lyrics.`); }
     this.drawPVW(true);
   }
   analyze(buffer, onProgress) {
@@ -110,7 +113,7 @@ class App {
 
   // ---------- cues ----------
   async writeCues() {
-    this.lyrics = $('#lyrics').value.trim();
+    this.lyrics = $('#lyrics').value.trim(); this.direction = $('#direction').value.trim();
     if (!this.lyrics) return this.toast('Paste the lyrics first.', true);
     if (!configured()) { this.openSetup(); return this.toast('Your own songs need Azure keys (SETUP). The demo works without.', true); }
     const ctl = new AbortController(); this.abort = ctl;
@@ -121,18 +124,21 @@ class App {
       try { const tr = await transcribe(wav, { signal: ctl.signal }); words = flattenWords(tr); } catch (e) { console.warn(e); this.toast('Could not hear the words (' + e.message + '); timing the lines by stanza instead.', true); }
       this.aligned = alignLyrics(this.lyrics, words);
       this.progress('WRITING THE CUES', 0.6);
-      const { treatment } = await writeTreatment({ title: this.title, analysis: this.analysis, lyrics: this.lyrics, aligned: this.aligned }, { signal: ctl.signal });
+      const { treatment } = await writeTreatment({ title: this.title, analysis: this.analysis, lyrics: this.lyrics, aligned: this.aligned, direction: this.direction }, { signal: ctl.signal });
       this.progress(null); $('#lyrics-box').hidden = true;
-      this.setTreatment(treatment); this.toast(`${treatment.cues.length} cues written.`);
+      this.setTreatment(treatment); this.toast(`${treatment.cues.length} cues written${this.direction ? ' to your direction' : ''}.`);
     } catch (e) { console.error(e); this.progress(null); this.toast('Could not write the cues: ' + e.message, true); }
   }
   setTreatment(tr) {
     this.treatment = tr; this.tl = timeline(tr, this.analysis); $('#lyrics-box').hidden = true;
     $('#treatment').textContent = tr.title_treatment; $('#rewrite').hidden = false;
     $('#strobe-warn').hidden = !tr.strobe_warning && !tr.cues.some((c) => c.kind === 'light' && c.effect === 'strobe');
+    // a new treatment is a new set of scenes: the old render desk no longer describes them
+    if (this.job) { this.job.detach(); this.job = null; } this.clips.clear(); $('#renderdesk').hidden = true; this.resetRenderKey();
     this.renderRundown(); this.updateCost(); this.setState('onair'); $('#render').disabled = false;
     this.drawPVW(true);
   }
+  resetRenderKey() { const k = $('#render'); k.textContent = 'RENDER '; k.appendChild(Object.assign(document.createElement('small'), { id: 'render-cost' })); k.disabled = !this.treatment; $('#render-cancel').disabled = false; this.updateCost(); }
   updateCost() { if (!this.treatment) return; const est = estimateCost(this.treatment, this.analysis); $('#render-cost').textContent = `$${est.dollars.toFixed(2)} · ${est.clips} clips`; this.est = est; }
   renderRundown() {
     const body = $('#ro-body'); body.replaceChildren();
@@ -146,11 +152,11 @@ class App {
       if (sec && sec !== lastSec) { lastSec = sec; const st = document.createElement('tr'); st.className = 'ro__section'; st.dataset.start = barTime(this.analysis, sec.bar).toFixed(3); st.innerHTML = `<td colspan="6">${esc(sec.name)}<small>from bar ${sec.bar} · ${fmtIn(barTime(this.analysis, sec.bar))}</small></td>`; frag.appendChild(st); }
       const tr = document.createElement('tr'); tr.dataset.n = c.n; tr.dataset.start = c.start.toFixed(3);
       const dur = c.end - c.start;
-      const src = c.kind === 'scene' ? 'VT' : c.kind === 'light' ? 'LX' : 'LYR';
+      const src = c.kind === 'scene' ? 'VT' : 'LX';
       tr.innerHTML = `<td class="ro__n">${String(c.n).padStart(2, '0')}</td>
         <td class="ro__in"><span class="in-t">${fmtIn(c.start)}</span><span class="in-b">bar ${c.in}${c.beat > 1 ? '.' + c.beat : ''}</span></td>
-        <td class="ro__cue"><div class="cue" contenteditable="plaintext-only" spellcheck="false">${esc(c.cue)}</div><span class="anchor">${esc(c.anchor)}${c.kind === 'light' ? ` · ${c.effect}${c.rate ? ' ×' + c.rate + '/beat' : ''}` : c.kind === 'lyric' ? ` · ${c.style}` : ''}</span></td>
-        <td class="ro__src"><span class="src src--${src.toLowerCase()}">${src}</span></td>
+        <td class="ro__cue"><div class="cue" contenteditable="plaintext-only" spellcheck="false">${esc(c.cue)}</div><span class="anchor">${esc(c.anchor)}${c.kind === 'light' ? ` · ${c.effect}${c.rate ? ' ×' + c.rate + '/beat' : ''}` : ''}</span></td>
+        <td class="ro__src"><span class="src src--${src.toLowerCase()}" title="${src === 'VT' ? 'Footage (videotape): a Sora clip cut in at this bar' : 'Lighting: an effect drawn over the picture on the beat'}">${src}</span>${c.kind === 'scene' ? `<button class="redo" type="button" title="Another take of this scene only">RETAKE</button>` : ''}</td>
         <td class="ro__dur">${dur.toFixed(1)}s<span class="seg">${c.bars} bar${c.bars === 1 ? '' : 's'}</span></td>
         <td class="ro__tally"><i class="tally"></i></td>`;
       frag.appendChild(tr);
@@ -218,35 +224,56 @@ class App {
       const s = upcoming[i]; const slot = this.pvwCanvases[i];
       fig.classList.toggle('is-next', i === 0 && !!s);
       if (!s) { fig.dataset.start = ''; fig.querySelector('.mon__tally span').textContent = '—'; fig.querySelectorAll('.mon__cap span')[0].textContent = '—'; fig.querySelectorAll('.mon__cap span')[1].textContent = '—'; slot.ctx.fillStyle = '#000'; slot.ctx.fillRect(0, 0, slot.c.width, slot.c.height); return; }
-      const key = `${s.n}:${this.clips.has(s.n)}`; if (!force && fig.dataset.key === key) return; fig.dataset.key = key; fig.dataset.start = s.start.toFixed(3);
+      const key = `${s.n}:${this.clips.get(s.n)?.url || ''}`; if (!force && fig.dataset.key === key) return; fig.dataset.key = key; fig.dataset.start = s.start.toFixed(3);
       fig.querySelector('.mon__tally span').textContent = `SCENE ${String(s.n).padStart(2, '0')}`; fig.querySelector('.mon__tally span').dataset.short = String(s.n).padStart(2, '0');
       fig.querySelectorAll('.mon__cap span')[0].textContent = s.anchor.replace(/^Bar \d+ /, ''); fig.querySelectorAll('.mon__cap span')[1].textContent = fmtIn(s.start);
-      drawFrame(slot.ctx, slot.c.width, slot.c.height, s.start + 0.02, this.tl, this.analysis, { clipFor: (sc) => this.clipFor(sc, s.start + 0.02, false), palette: this.treatment.palette, showLyrics: false, showShot: false });
+      drawFrame(slot.ctx, slot.c.width, slot.c.height, s.start + 0.02, this.tl, this.analysis, { clipFor: (sc) => this.clipFor(sc, s.start + 0.02, false), palette: this.treatment.palette, showShot: false });
     });
   }
 
   // ---------- render: footage ----------
-  setFormat(v) { this.size = v === '9:16' ? '720x1280' : '1280x720'; this.screen.width = v === '9:16' ? 720 : 1280; this.screen.height = v === '9:16' ? 1280 : 720; document.documentElement.style.setProperty('--mon-ratio', v === '9:16' ? '9 / 16' : '16 / 9'); this.drawPVW(true); if (this.state === 'render' && this.job?.done) this.loadClipsFromCache(); }
+  // One desk per treatment and frame size. RENDER opens it (or resumes it: failures re-queue, done clips stay);
+  // STOP starts nothing new; RETAKE renders one scene again. A new treatment or format throws the desk away.
+  setFormat(v) { this.size = v === '9:16' ? '720x1280' : '1280x720'; this.screen.width = v === '9:16' ? 720 : 1280; this.screen.height = v === '9:16' ? 1280 : 720; document.documentElement.style.setProperty('--mon-ratio', v === '9:16' ? '9 / 16' : '16 / 9'); if (this.job) { this.job.detach(); this.job = null; } if (this.state === 'render') this.openDesk(true); else this.drawPVW(true); }
+  async openDesk(stopped = false) {
+    if (this.job) return this.job;
+    this.setState('render'); $('#renderdesk').hidden = false;
+    this.job = new FootageJob({ songId: this.songId, scenes: this.tl.scenes, analysis: this.analysis, size: this.size, direction: this.direction || '', onUpdate: (j) => this.onJob(j) });
+    if (stopped) this.job.stopped = true; // cache only: nothing is rendered until RENDER or a RETAKE
+    this.clips.clear(); this.renderJobs(); await this.job.start(); this.drawPVW(true);
+    return this.job;
+  }
   async render() {
     if (!this.treatment) return;
     if (!configured()) { this.openSetup(); return this.toast('Rendering footage needs Azure keys (SETUP).', true); }
-    this.setState('render'); $('#renderdesk').hidden = false; $('#export').disabled = true;
-    const est = this.est; $('#render-line').textContent = `${est.clips} clips · ${est.seconds}s of footage · about $${est.dollars.toFixed(2)} on your Azure. Two render at a time; a 3-minute song takes 10–20 minutes. Keep listening.`;
-    this.job?.cancel();
-    this.job = new FootageJob({ songId: this.songId, scenes: this.tl.scenes, analysis: this.analysis, size: this.size, onUpdate: (j) => this.onJob(j) });
-    this.renderJobs(); await this.job.start();
+    if (this.job) { this.job.resume(); return; } // same treatment and size: resume, re-queue failures, pay for nothing already in
+    const est = this.est; $('#renderdesk').hidden = false; $('#render-line').textContent = `${est.clips} clips · ${est.seconds}s of footage · about $${est.dollars.toFixed(2)} on your Azure, less whatever is already cached. Two render at a time; a 3-minute song takes 10–20 minutes. Keep listening.`;
+    await this.openDesk(false);
     $('#renderdesk').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // Another take of one scene. Costs that scene's clip and nothing else; the rest of the desk is untouched.
+  async retake(n) {
+    if (!this.treatment) return;
+    if (!configured()) { this.openSetup(); return this.toast('Rendering footage needs Azure keys (SETUP).', true); }
+    const job = await this.openDesk(true); // opening a fresh desk for one retake renders only that scene
+    const it = job.items.find((i) => i.scene.n === n); if (!it) return;
+    if (busy(it)) return this.toast(`Scene ${String(n).padStart(2, '0')} is already rendering.`, true);
+    this.clips.delete(n); // the old take leaves the monitor at once
+    const li = $(`#jobs li[data-n="${n}"]`); if (li) { const thumb = li.querySelector('.job__thumb'); const cv = document.createElement('canvas'); cv.width = 320; cv.height = 180; thumb.replaceChildren(cv); drawFrame(cv.getContext('2d'), 320, 180, it.scene.start + 0.02, this.tl, this.analysis, { clipFor: () => null, palette: this.treatment.palette }); }
+    this.drawPVW(true);
+    this.toast(`Scene ${String(n).padStart(2, '0')}: another take · $${(it.seconds * 0.10).toFixed(2)}.`); li?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    await job.retake(n);
   }
   renderJobs() {
     const ol = $('#jobs'); ol.replaceChildren();
     for (const it of this.job.items) {
       const li = document.createElement('li'); li.className = 'job'; li.dataset.n = it.scene.n;
-      li.innerHTML = `<div class="job__thumb"><canvas width="320" height="180"></canvas></div><div class="job__meta"><span class="job__n">SCENE ${String(it.scene.n).padStart(2, '0')}</span><span class="job__state">queued</span><span class="job__len">${it.seconds}s</span><div class="job__bar"><b></b></div></div>`;
+      li.innerHTML = `<div class="job__thumb"><canvas width="320" height="180"></canvas></div><div class="job__meta"><span class="job__n">SCENE ${String(it.scene.n).padStart(2, '0')}</span><span class="job__state">queued</span><span class="job__len">${it.seconds}s</span><div class="job__bar"><b></b></div><button class="job__redo" type="button" disabled title="Another take of this scene only · $${(it.seconds * 0.10).toFixed(2)}">RETAKE · $${(it.seconds * 0.10).toFixed(2)}</button></div>`;
       // clips come in 4/8/12 s; say so when the clip will play slowed to cover a longer scene
       const sceneLen = it.scene.end - it.scene.start, rate = clipRate(it.scene, it.seconds);
       li.querySelector('.job__len').title = rate < 0.995 ? `${it.seconds} s clip over a ${sceneLen.toFixed(1)} s scene · plays at ${rate.toFixed(2)}×` : `${it.seconds} s clip · ${sceneLen.toFixed(1)} s scene`;
       ol.appendChild(li);
-      const cv = li.querySelector('canvas'); drawFrame(cv.getContext('2d'), 320, 180, it.scene.start + 0.02, this.tl, this.analysis, { clipFor: () => null, palette: this.treatment.palette, showLyrics: false });
+      const cv = li.querySelector('canvas'); drawFrame(cv.getContext('2d'), 320, 180, it.scene.start + 0.02, this.tl, this.analysis, { clipFor: () => null, palette: this.treatment.palette });
     }
   }
   onJob(j) {
@@ -254,11 +281,13 @@ class App {
       const li = $(`#jobs li[data-n="${it.scene.n}"]`); if (!li) continue;
       li.className = 'job' + (it.state === 'running' || it.state === 'creating' || it.state === 'downloading' ? ' is-running' : it.state === 'done' ? ' is-done' : it.state === 'failed' ? ' is-failed' : '');
       const st = li.querySelector('.job__state');
-      st.textContent = it.state === 'failed' ? 'failed' : it.state === 'running' ? `rendering ${Math.round(it.progress * 100)}%` : it.cached ? 'done · cached' : it.state;
+      st.textContent = it.state === 'failed' ? 'failed' : it.state === 'running' ? `rendering ${Math.round(it.progress * 100)}%` : it.cached ? 'done · cached' : it.state === 'done' && it.retake ? `done · take ${it.retake + 1}` : it.state;
       // the whole reason, where a tile cannot: on the tile's tooltip and in the desk line below
       if (it.state === 'failed') { li.title = it.error || 'failed'; st.title = it.error || 'failed'; } else { li.removeAttribute('title'); st.removeAttribute('title'); }
       li.querySelector('.job__bar b').style.width = Math.round(it.progress * 100) + '%';
-      if (it.state === 'done' && !this.clips.has(it.scene.n)) {
+      const row = $(`#ro-body tr[data-n="${it.scene.n}"] .redo`); if (row) row.disabled = busy(it);
+      li.querySelector('.job__redo').disabled = !(it.state === 'done' || it.state === 'failed');
+      if (it.state === 'done' && (!this.clips.has(it.scene.n) || this.clips.get(it.scene.n).url !== it.url)) {
         const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.preload = 'auto'; video.src = it.url; video.load();
         this.clips.set(it.scene.n, { url: it.url, video });
         const thumb = li.querySelector('.job__thumb'); const v2 = document.createElement('video'); v2.muted = true; v2.playsInline = true; v2.src = it.url; v2.loop = true; v2.autoplay = true; thumb.replaceChildren(v2);
@@ -266,14 +295,24 @@ class App {
       }
     }
     const done = j.items.filter((i) => i.state === 'done').length, failedItems = j.items.filter((i) => i.state === 'failed'), failed = failedItems.length;
-    // one line of truth: progress while running; on finish, the count and — if anything failed — the first full reason, so it is never cut to a tile
-    const reasons = [...new Set(failedItems.map((i) => i.error).filter(Boolean))];
-    const why = failed ? ` ${reasons.length > 1 ? `${reasons.length} reasons, first: ` : ''}${reasons[0] || 'no reason given'}` : '';
-    $('#render-line').textContent = j.done ? `${done} of ${j.items.length} clips in${failed ? `, ${failed} failed — ${why.trim()} (press RETRY FAILED to try those again)` : ''}. $${(j.spent * 0.10).toFixed(2)} spent.` : `${done} of ${j.items.length} clips in · ${j.inflight} rendering${failed ? ` · ${failed} failed:${why}` : ''} · $${(j.spent * 0.10).toFixed(2)} committed so far`;
+    // one line of truth for progress; the failure reason gets its own line under it so it is never cut to a tile or crammed into a sentence
+    const reasons = [...new Set(failedItems.map((i) => String(i.error || '').replace(/[.\s]+$/, '')).filter(Boolean))];
+    const spent = `$${(j.spent * 0.10).toFixed(2)}`;
+    const line = $('#render-line'), key = $('#render'), whyEl = $('#render-why');
+    // the reason a clip failed goes on its own line, whole; the status line stays one sentence
+    whyEl.hidden = !failed; whyEl.textContent = failed ? `${failed === 1 ? 'The failed clip' : `${failed} clips failed; the first`} said: ${reasons[0] || 'no reason given'}.${reasons.length > 1 ? ` (${reasons.length} different reasons; each tile's tooltip has its own.)` : ''}` : '';
+    if (!j.attempted && !j.inflight && j.stopped) { // a fresh desk (format switched, or opened for a retake that has not started): nothing spent yet
+      const est = this.est, toGo = j.items.filter((i) => i.state === 'queued').reduce((s, i) => s + i.seconds, 0);
+      line.textContent = `${done} of ${j.items.length} clips cached for this format · ${j.queued} to render · about $${(toGo * 0.10).toFixed(2)} on your Azure.${est.clips ? ' Two render at a time.' : ''} RETAKE on a scene renders that one alone.`;
+      this.resetRenderKey(); key.disabled = false; $('#render-cancel').disabled = true; $('#export').disabled = !(done > 0); return;
+    }
+    if (j.done) { line.textContent = `${done} of ${j.items.length} clips in${failed ? `, ${failed} failed` : ''}. ${spent} spent.${failed ? ' RENDER retries the failed ones; ' : ' '}RETAKE on a scene renders that one again.`; key.textContent = failed ? 'RETRY FAILED' : 'RENDER AGAIN'; }
+    else if (j.stopped && !j.inflight) { line.textContent = `Stopped: ${done} of ${j.items.length} clips in · ${j.queued} not rendered${failed ? ` · ${failed} failed` : ''} · ${spent} spent. RENDER for the rest, or RETAKE a scene.`; key.textContent = 'RENDER THE REST'; }
+    else if (j.stopped) { line.textContent = `Stopping: ${j.inflight} still rendering (already paid for) · ${done} of ${j.items.length} in · ${spent} spent.`; key.textContent = 'RENDER THE REST'; }
+    else { line.textContent = `${done} of ${j.items.length} clips in · ${j.inflight} rendering${j.queued ? ` · ${j.queued} queued` : ''}${failed ? ` · ${failed} failed` : ''} · ${spent} committed so far`; key.textContent = 'RENDERING…'; }
+    key.disabled = !j.stopped && !j.done; $('#render-cancel').disabled = j.stopped || j.done;
     $('#export').disabled = !(done > 0);
-    if (j.done) $('#render').textContent = failed ? 'RETRY FAILED' : 'RE-RENDER';
   }
-  async loadClipsFromCache() { this.clips.clear(); for (const s of this.tl.scenes) { const c = await getClip(clipKey(this.songId, s, this.size)); if (c) { const url = URL.createObjectURL(c.blob); const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.preload = 'auto'; video.src = url; this.clips.set(s.n, { url, video }); } } this.drawPVW(true); }
 
   // ---------- export ----------
   async export() {
@@ -295,7 +334,7 @@ class App {
     btn.disabled = false;
   }
 
-  reset() { this.stop(); this.job?.cancel(); this.buffer = null; this.treatment = null; this.tl = null; this.clips.clear(); $('#ro-body').replaceChildren(); $('#treatment').textContent = ''; $('#lyrics-box').hidden = true; $('#renderdesk').hidden = true; $('#play').disabled = true; $('#render').disabled = true; $('#render').textContent = 'RENDER '; $('#render').appendChild(Object.assign(document.createElement('small'), { id: 'render-cost' })); $('#pgm-label').textContent = 'NO SOURCE'; $('#pgm-scene').textContent = '—'; $('#pgm-src').textContent = '—'; $('#tc').textContent = '00:00.0'; $('#bar').textContent = '—'; $('#next').textContent = '—'; $('#section').textContent = '—'; $('#another').hidden = true; $('#rewrite').hidden = true; $('#edit-lyrics').hidden = true; $('#strobe-warn').hidden = true; this.setState('nosource'); }
+  reset() { this.stop(); if (this.job) { this.job.detach(); this.job = null; } this.buffer = null; this.treatment = null; this.tl = null; this.direction = ''; this.clips.clear(); $('#ro-body').replaceChildren(); $('#treatment').textContent = ''; $('#lyrics-box').hidden = true; $('#renderdesk').hidden = true; $('#play').disabled = true; this.resetRenderKey(); $('#render').disabled = true; $('#pgm-label').textContent = 'NO SOURCE'; $('#pgm-scene').textContent = '—'; $('#pgm-src').textContent = '—'; $('#tc').textContent = '00:00.0'; $('#bar').textContent = '—'; $('#next').textContent = '—'; $('#section').textContent = '—'; $('#another').hidden = true; $('#rewrite').hidden = true; $('#edit-lyrics').hidden = true; $('#strobe-warn').hidden = true; this.setState('nosource'); }
 }
 
 // ---------- helpers ----------

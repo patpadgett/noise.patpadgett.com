@@ -15,11 +15,15 @@ const deck = await page.evaluate(() => ({ rows: document.querySelectorAll('#ro-b
 console.log('deck:', JSON.stringify(deck));
 if (deck.rows < 20 || deck.sections < 3) errors.push('cue sheet incomplete');
 if (!deck.lyricsHidden) errors.push('lyrics box visible after treatment');
-await page.evaluate(() => window.cue.seek(28.5)); await page.click('#play'); await page.waitForTimeout(400);
+const boundary = await page.evaluate(() => window.cue.tl.cues.map((c) => c.start).filter((t) => t > 20).sort((a, b) => a - b)[0]);
+await page.evaluate((t) => window.cue.seek(t), boundary - 1.2); await page.click('#play'); await page.waitForTimeout(400);
 const snap = () => page.evaluate(() => ({ tc: document.querySelector('#tc').textContent, next: document.querySelector('#next').textContent, air: [...document.querySelectorAll('#ro-body tr.is-air')].map((r) => r.dataset.n), pgm: document.querySelector('#pgm').classList.contains('is-air') }));
 const s1 = await snap(); await page.waitForTimeout(2500); const s2 = await snap();
 console.log('t+0.4:', JSON.stringify(s1)); console.log('t+2.9:', JSON.stringify(s2));
-if (!(s2.tc > s1.tc)) errors.push('clock did not advance'); if (!s1.pgm) errors.push('PGM not on air'); if (JSON.stringify(s1.air) === JSON.stringify(s2.air)) errors.push('no tally handoff');
+if (!(s2.tc > s1.tc)) errors.push('clock did not advance'); if (!s1.pgm) errors.push('PGM not on air'); if (JSON.stringify(s1.air) === JSON.stringify(s2.air) && s1.next === s2.next) errors.push('no tally handoff');
+const noText = await page.evaluate(() => ({ lyr: document.querySelectorAll('#ro-body .src').length && ![...document.querySelectorAll('#ro-body .src')].some((s) => s.textContent === 'LYR'), kinds: [...new Set(window.cue.tl.cues.map((c) => c.kind))], direction: !!window.cue.direction }));
+console.log('no-text + direction:', JSON.stringify(noText));
+if (!noText.lyr || noText.kinds.includes('lyric')) errors.push('lyric rows on the live running order'); if (!noText.direction) errors.push('demo direction missing live');
 const fonts = await page.evaluate(async () => { await document.fonts.ready; return [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family + ' ' + f.weight); });
 console.log('fonts loaded:', fonts.join(' | '));
 if (!fonts.some((f) => /Barlow/.test(f)) || !fonts.some((f) => /Archivo/.test(f))) errors.push('self-hosted fonts did not load');

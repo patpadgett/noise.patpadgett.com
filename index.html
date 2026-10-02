@@ -75,16 +75,18 @@
       <h2 class="rundown__title" id="rundown-title">RUNNING ORDER</h2>
       <p class="rundown__treat" id="treatment"></p>
       <div class="rundown__tools">
-        <button class="key key--ghost" id="edit-lyrics" type="button" hidden>LYRICS</button>
+        <button class="key key--ghost" id="edit-lyrics" type="button" hidden>WORDS &amp; DIRECTION</button>
         <button class="key key--ghost" id="rewrite" type="button" hidden>REWRITE TREATMENT</button>
         <button class="key key--ghost" id="another" type="button" hidden>ANOTHER SONG</button>
       </div>
     </header>
 
-    <!-- lyrics intake (shows when a song is loaded and no lyrics yet, or on LYRICS) -->
+    <!-- words + direction intake (shows when a song is loaded and no cues yet, or on WORDS) -->
     <div class="lyrics" id="lyrics-box" hidden>
-      <label for="lyrics">Paste the lyrics. Blank line between stanzas. Repeated stanzas tell CUE where the chorus is.</label>
+      <label for="lyrics">Paste the lyrics. Blank line between stanzas. CUE reads them for the story and the anchors; the video never shows text.</label>
       <textarea id="lyrics" rows="10" spellcheck="false" placeholder="Verse one…&#10;&#10;Chorus…"></textarea>
+      <label for="direction">Direction (optional): where and when the video lives, its look — a few words every shot will honour.</label>
+      <input id="direction" class="direction" type="text" maxlength="240" spellcheck="false" placeholder="Jakarta at night, monsoon rain, neon on wet streets · or · 1970s Kodachrome, a desert highway at dawn" autocomplete="off">
       <div class="lyrics__row">
         <span class="lyrics__count" id="lyrics-count">0 lines</span>
         <button class="key key--hot" id="go" type="button">WRITE THE CUES</button>
@@ -107,6 +109,7 @@
         <label class="fmt"><input type="radio" name="fmt" value="16:9" checked><span>16:9 · YOUTUBE</span></label>
         <label class="fmt"><input type="radio" name="fmt" value="9:16"><span>9:16 · REELS</span></label>
       </div>
+      <p class="renderdesk__why" id="render-why" hidden></p>
     </header>
     <ol class="jobs" id="jobs"></ol>
     <div class="renderdesk__row">
@@ -119,7 +122,7 @@
 
 <footer class="foot">
   <span>A Patrick Padgett project · <a href="https://github.com/patpadgett/noise.patpadgett.com">source</a></span>
-  <span>Use songs you have the rights to. The song is sent to Azure Speech to time the lyrics and to Sora 2 to generate footage; CUE keeps nothing.</span>
+  <span>Use songs you have the rights to. The song is sent to Azure Speech to time the lyrics and to Sora 2 to generate footage; CUE keeps nothing. The video carries no text.</span>
 </footer>
 
 <!-- SETUP -->

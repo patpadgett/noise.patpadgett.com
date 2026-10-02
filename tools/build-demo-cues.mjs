@@ -5,6 +5,8 @@ import { execSync } from 'node:child_process';
 import { alignLyrics, flattenWords } from '../js/align.js';
 import { TREATMENT_SYSTEM, TREATMENT_SCHEMA, treatmentUserMessage } from '../js/treatment.js';
 import { DEMO_TITLE, DEMO_LYRICS } from '../js/demo-lyrics.js';
+// The demo's own direction — the same field a visitor fills in. A 1920 record gets a 1920 world.
+const DEMO_DIRECTION = 'A rented room and a small-town railway station, 1920, late afternoon into dusk; hand-tinted 35mm, no modern objects';
 const S = '/data/pat/.hermes/cache/scratch/cue';
 const transcript = JSON.parse(fs.readFileSync(S + '/transcript.json', 'utf8'));
 const analysis = JSON.parse(fs.readFileSync(S + '/analysis.json', 'utf8'));
@@ -16,7 +18,7 @@ const key = execSync('az cognitiveservices account keys list -n patm-moil89iq-ea
 const body = {
   model: 'gpt-6-astra',
   reasoning: { effort: 'low' },
-  input: [{ role: 'system', content: TREATMENT_SYSTEM }, { role: 'user', content: treatmentUserMessage({ title: DEMO_TITLE, analysis, lyrics: DEMO_LYRICS, aligned }) }],
+  input: [{ role: 'system', content: TREATMENT_SYSTEM }, { role: 'user', content: treatmentUserMessage({ title: DEMO_TITLE, analysis, lyrics: DEMO_LYRICS, aligned, direction: DEMO_DIRECTION }) }],
   text: { format: { type: 'json_schema', name: 'treatment', strict: true, schema: TREATMENT_SCHEMA } },
 };
 const t0 = Date.now();
@@ -30,4 +32,4 @@ console.log(treatment.title_treatment); console.log(treatment.palette.join(' '))
 for (const s of treatment.sections) console.log(`  section ${s.name} bar ${s.bar} +${s.bars}`);
 for (const c of treatment.cues) console.log(`  #${String(c.n).padStart(2)} ${c.kind.padEnd(5)} bar ${String(c.in).padStart(2)}.${c.beat} +${c.bars} [${c.anchor}] ${c.cue}`);
 fs.mkdirSync('assets/demo', { recursive: true });
-fs.writeFileSync('assets/demo/cues.json', JSON.stringify({ title: DEMO_TITLE, analysis: { bpm: analysis.bpm, keyName: analysis.keyName, duration: analysis.duration, barStarts: analysis.barStarts, barLoud: analysis.barLoud }, lyrics: DEMO_LYRICS, aligned, treatment, generated: { model: 'gpt-6-astra', at: new Date().toISOString() } }, null, 1));
+fs.writeFileSync('assets/demo/cues.json', JSON.stringify({ title: DEMO_TITLE, analysis: { bpm: analysis.bpm, keyName: analysis.keyName, duration: analysis.duration, barStarts: analysis.barStarts, barLoud: analysis.barLoud }, lyrics: DEMO_LYRICS, direction: DEMO_DIRECTION, aligned, treatment, generated: { model: 'gpt-6-astra', at: new Date().toISOString() } }, null, 1));

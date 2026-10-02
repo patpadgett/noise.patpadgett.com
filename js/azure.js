@@ -39,12 +39,13 @@ export async function transcribe(audioBlob, { signal } = {}) {
 }
 
 // ---- 2. The treatment: gpt-6-astra via the Responses API with a strict JSON schema -----
-export async function writeTreatment({ title, analysis, lyrics, aligned }, { signal } = {}) {
+// direction: the artist's own words (place, time of day, look) that every shot must honour
+export async function writeTreatment({ title, analysis, lyrics, aligned, direction = '' }, { signal } = {}) {
   const cfg = loadConfig(); const [url, headers] = oai(cfg, '/responses');
   const body = {
     model: cfg.chatDeployment || 'gpt-6-astra',
     reasoning: { effort: 'low' },
-    input: [{ role: 'system', content: TREATMENT_SYSTEM }, { role: 'user', content: treatmentUserMessage({ title, analysis, lyrics, aligned }) }],
+    input: [{ role: 'system', content: TREATMENT_SYSTEM }, { role: 'user', content: treatmentUserMessage({ title, analysis, lyrics, aligned, direction }) }],
     text: { format: { type: 'json_schema', name: 'treatment', strict: true, schema: TREATMENT_SCHEMA } },
   };
   const d = await j(await fetch(url, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }));

@@ -16,8 +16,10 @@ await page.waitForFunction(() => document.body.dataset.state === 'onair' && docu
 const deck = await page.evaluate(() => ({ rows: document.querySelectorAll('#ro-body tr').length, sections: document.querySelectorAll('#ro-body .sec').length, cost: document.querySelector('#render-cost').textContent, treat: document.querySelector('#treatment').textContent.slice(0, 80), bpm: window.cue.analysis.bpm, pvw: [...document.querySelectorAll('.mon--pvw .mon__tally span')].map((s) => s.textContent) }));
 console.log('deck:', JSON.stringify(deck));
 if (deck.rows < 20) errors.push('too few cue rows');
-// play 6 seconds from just before the first vocal entrance (bar 14 ≈ 29.7 s) and watch the tally move
-await page.evaluate(() => window.cue.seek(28.5));
+// play across the first cue boundary after 20 s (read from the cue sheet, so a regenerated treatment keeps the test honest) and watch the tally move
+const boundary = await page.evaluate(() => window.cue.tl.cues.map((c) => c.start).filter((t) => t > 20).sort((a, b) => a - b)[0]);
+console.log('tally boundary at', boundary.toFixed(2), 's');
+await page.evaluate((t) => window.cue.seek(t), boundary - 1.2);
 await page.click('#play');
 await page.waitForTimeout(400);
 const snap = async () => page.evaluate(() => ({ tc: document.querySelector('#tc').textContent, bar: document.querySelector('#bar').textContent, next: document.querySelector('#next').textContent, sec: document.querySelector('#section').textContent, air: [...document.querySelectorAll('#ro-body tr.is-air')].map((r) => r.dataset.n), nxt: document.querySelector('#ro-body tr.is-next')?.dataset.n, pgm: document.querySelector('#pgm').classList.contains('is-air'), pgmNext: document.querySelector('.mon--pvw.is-next .mon__tally span')?.textContent, scene: document.querySelector('#pgm-scene').textContent }));
@@ -25,7 +27,7 @@ const s1 = await snap(); await page.waitForTimeout(2500); const s2 = await snap(
 console.log('t+0.4:', JSON.stringify(s1)); console.log('t+2.9:', JSON.stringify(s2));
 if (!(s2.tc > s1.tc)) errors.push('clock did not advance');
 if (!s1.pgm) errors.push('PGM tally not red while playing');
-if (JSON.stringify(s1.air) === JSON.stringify(s2.air) && s1.nxt === s2.nxt) errors.push('tally did not hand off across the bar-14 cues');
+if (JSON.stringify(s1.air) === JSON.stringify(s2.air) && s1.nxt === s2.nxt) errors.push('tally did not hand off across the cue boundary');
 await page.evaluate(() => window.cue.hideToast());
 await page.waitForTimeout(250);
 await page.screenshot({ path: shots + '/desktop.png', fullPage: true });
@@ -54,6 +56,12 @@ await m.waitForTimeout(600);
 await m.evaluate(() => window.cue.hideToast());
 await m.waitForTimeout(250);
 console.log('mobile overflow:', await m.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth));
+// RETAKE keys on phone rows: a real tap target that stays inside the viewport
+const tap = await m.evaluate(() => { window.cue.setState('render'); const bs = [...document.querySelectorAll('#ro-body .redo')].map((b) => b.getBoundingClientRect()); window.cue.setState('onair'); return { n: bs.length, minH: Math.min(...bs.map((b) => b.height)), maxRight: Math.max(...bs.map((b) => b.right)), vw: innerWidth }; });
+console.log('mobile RETAKE keys:', JSON.stringify(tap));
+if (!(tap.n > 0 && tap.minH >= 24 && tap.maxRight <= tap.vw)) errors.push('RETAKE keys on phone rows are too small or run off the screen');
+const sectionWrap = await m.evaluate(() => [...document.querySelectorAll('#ro-body tr.ro__section small')].some((s) => s.getBoundingClientRect().height > 24));
+if (sectionWrap) errors.push('a section header time wraps on the phone');
 await m.screenshot({ path: shots + '/mobile.png', fullPage: true });
 console.log('ERRORS:', errors.length ? errors.join('\n') : 'none');
 await browser.close();
