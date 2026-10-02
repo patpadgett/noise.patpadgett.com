@@ -1,50 +1,71 @@
 # CUE
 
-Drop a song, paste its lyrics, say in a line where the video lives, get a music video. CUE listens to the music (tempo, bars, key, loudness per bar), reads the lyrics (aligned to where the singer sings them; they are never shown on screen), writes a cue sheet a director would call, and plays it on a broadcast-gallery screen: a PGM monitor with every light cue exact to the beat, four PVW monitors showing the next scenes, a clock with timecode, bar:beat and a NEXT CUE countdown, and the running order on paper. RENDER generates every scene's footage with Sora 2 on Azure; RETAKE renders one scene again on its own; EXPORT writes the finished video, 16:9 or 9:16.
+Drop a song, paste its lyrics, say in a line where the video lives, get a music video. CUE listens to the music (tempo, bars, key, loudness per bar), reads the lyrics (aligned to where the singer sings them; they are never shown on screen), writes a cue sheet a director would call, and plays it on a broadcast-gallery screen: a PGM monitor with every light cue exact to the beat, four PVW monitors showing the next scenes, a clock with timecode, bar:beat and a NEXT CUE countdown, and the running order on paper. RENDER generates every scene's footage on the owner's own GPU for nothing; RETAKE renders one scene again on its own; EXPORT writes the finished video, 16:9 or 9:16.
 
 Live: https://noise.patpadgett.com (the demo needs no keys).
 
-## How the video is wired up with Azure
+## How the video is made
 
-Everything runs in the browser except three Azure calls, all behind `js/azure.js`:
+Everything runs in the browser except three calls, all behind `js/engines.js`:
 
-| Step | Azure service | What it does | Cost (demo song, 3 min) |
+| Step | Service | What it does | Cost (demo song, 3 min) |
 |---|---|---|---|
 | Hear the singer | **Azure AI Speech — fast transcription** (`/speechtotext/transcriptions:transcribe?api-version=2025-10-15`, `wordLevelTimestampsEnabled`) | Word timestamps for the vocal; `js/align.js` pins each pasted lyric line to its second (banded DP alignment, forgiving of sung-vocal errors; lines it cannot pin are interpolated and flagged *estimated*) | ≈ $0.02 |
-| Write the treatment | **Azure OpenAI — `gpt-6-astra` via the Responses API** with a strict JSON schema (`js/treatment.js`) | From tempo, bar starts, per-bar loudness, key, lyrics, line timings and the artist's one-line DIRECTION (place, time of day, look — "Jakarta at night, monsoon rain"): sections, a palette, and as many cues as the music asks for, of two kinds: **scene** (a Sora prompt in the song's style that honours the direction) and **light** (strobe / pulse / flash / wash / blackout / flicker with a rate in hits per beat and a colour). Scenes are capped in length (one Sora clip, 12 s — `MAX SCENE` is stated in bars at the song's tempo), never in number; a 3-minute song is typically 25–45 scenes. Every cue names its anchor: *Bar 44 loudness rise from 0.45 to 0.63*, *Bar 22 landing of "I'm leaving here today"*. The lyrics are read for mood and anchors; no text is ever put on the picture | ≈ $0.05 |
-| Footage | **Azure OpenAI — Sora 2** (`POST /openai/v1/videos` → `GET /videos/{id}` → `GET /videos/{id}/content`), deployment `sora-2`, GlobalStandard, eastus2 | One job per scene, 4, 8 or 12 s (the only lengths the API accepts; the shortest that covers the scene is chosen and a shorter clip plays slowed to fill it), 720p landscape or portrait, two in flight (preview limit), polled every 4 s, cached in IndexedDB per song + scene + size + prompt. The direction is appended to every Sora prompt. RETAKE re-renders one scene alone | ≈ $0.10 per generated second → **$18.40** for 26 scenes / 184 s |
+| Write the treatment | **Azure OpenAI — `gpt-6-astra` via the Responses API** with a strict JSON schema (`js/treatment.js`) | From tempo, bar starts, per-bar loudness, key, lyrics, line timings and the artist's one-line DIRECTION (place, time of day, look — "Jakarta at night, monsoon rain"): sections, a palette, and as many cues as the music asks for, of two kinds: **scene** (a footage prompt in the song's style that honours the direction) and **light** (strobe / pulse / flash / wash / blackout / flicker with a rate in hits per beat and a colour). Scenes are capped in length (12 s — `MAX SCENE` is stated in bars at the song's tempo), never in number; a 3-minute song is typically 25–45 scenes. Every cue names its anchor: *Bar 44 loudness rise from 0.45 to 0.63*, *Bar 22 landing of "I'm leaving here today"*. The lyrics are read for mood and anchors; no text is ever put on the picture | ≈ $0.05 |
+| Footage | **The owner's render box** — `render/cue_render.py`, Wan 2.2 TI2V-5B (Apache-2.0, open weights) through ComfyUI on a Tesla T4, behind nginx + Let's Encrypt at `render.patpadgett.com` | One job per scene, 1–5 s at the scene's exact length (a scene over 5 s plays its clip slowed; `normalizeTreatment` caps scenes at 12 s), native 1280×704 at 24 fps, landscape or portrait. The whole sheet is queued at once with idempotent keys and the queue is persisted on the box, so the browser can close and the render carries on overnight; reopening the desk re-attaches to the same jobs. Clips are cached in IndexedDB per song + scene + size + model + prompt. RETAKE re-renders one scene alone | **$0** · about 5 minutes of GPU per second of footage (the demo's 26 scenes ≈ 7 hours) |
 
 The lights cost nothing: `js/switcher.js` draws them on a canvas from the beat grid (`lightLevel()` is a pure function of song time and the cue), so a 14-second strobe after the bass drop is exactly 14 seconds and exactly on the hats. The same `drawFrame()` renders the live PGM monitor, the PVW thumbnails, and every frame of the export.
 
-### Setting it up on your own Azure
+### Why this engine, measured
 
-1. **Azure OpenAI / AI Foundry resource** in a Sora region (eastus2 or swedencentral today). Deploy `sora-2` (GlobalStandard; idle cost zero) and a chat model (the app defaults to a deployment named `gpt-6-astra`; any Responses-API model with structured outputs works, set the name in SETUP). The v1 endpoint is `https://<resource>.openai.azure.com/openai/v1`. Sora 2 preview rules the prompts obey: no real people or faces, no copyrighted characters or music, no on-screen text; 720p only (`1280x720` / `720x1280`); clips of exactly 4, 8 or 12 s (any other `seconds` is a 400 `invalid_value`); two concurrent jobs; jobs expire after 24 h.
-2. **Azure AI Speech resource** (any region; the app needs the region name and a key).
-3. Open the site → SETUP → *My Azure keys*: paste the OpenAI endpoint + key, the deployment names, the Speech region + key. TEST makes a `GET /videos?limit=1` and a one-second silent transcription. Keys live in `localStorage` only. CORS is open (`*`) on both services, which is why a static page can call them directly.
-4. **Going public** (the owner's Azure pays): deploy the same tree to Azure Static Web Apps; `api/` is the managed Functions proxy (`/api/openai/*`, `/api/speech/transcribe`) with the keys in app settings and daily caps (`CUE_DAILY_SECONDS`, `CUE_VISITOR_SECONDS`). Visitors pick *Site proxy* in SETUP (or make it the default by shipping `cue.azure.v1 = {"mode":"proxy"}`). Move the in-memory caps to Table Storage before real traffic.
+Sora 2 (the original footage engine) was retired by Microsoft on 2026-10-15. Everything below was measured on this project's own box — an Azure VM with a Tesla T4 (16 GB, fp16 only) — on 2026-10-02; the frames were assessed blind, not eyeballed:
+
+| Candidate | Result on the T4 |
+|---|---|
+| **Wan 2.2 TI2V-5B, fp16, 20 steps, CFG 5** | Native 1280×704/24 fps. ~45 s per step → **~5 min per second of footage**. Coherent over 3 s, rain droplets individually resolved, neon crisp. Text still wrong ("COPEN"). **This is the engine.** |
+| Wan 2.2 5B Turbo (4-step DMD distilled: LoRA on base; fused checkpoint with euler; fused checkpoint on its trained t=1000/750/500/250 schedule with LCM) | 25× faster sampling, but every configuration came out as unresolved noise with melting objects. Likely the fp16-only card (the distillation is bf16). Selectable with `CUE_RENDER_MODE=turbo` on a card with bf16; not the default. |
+| Wan 2.1 1.3B at 832×480 then Real-ESRGAN ×2 + RIFE ×2 | 2–4 min per second. Upscaling a blur-limited 480p frame does not produce HD: waxy surfaces, halos, no texture. RIFE's 16→32 fps did give fluid motion. Native 720p from the 5B model beat it clearly. |
+| MiniMax H3 (33B + 32B text encoder), LTX-2.5 (22B + 12B encoder) | Better models, but no official file fits 16 GB; community Q3/Q4 GGUFs would run slowly with the text encoder on CPU and likely below the 5B model at full precision. |
+| Kling 3.0 / Seedance via Higgsfield, a rented A100 | Faster and (Kling, Seedance) better, for money. The engine layer still carries them (`MODELS` in `js/engines.js`, mocked in `tests/render.mjs`) so they are a key away; the owner chose to run free. |
+
+### Running the render box
+
+```
+# the GPU worker and the job server, as user services (survive reboots; loginctl enable-linger)
+cp render/comfyui.service render/cue-render.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+printf 'CUE_RENDER_TOKEN=%s\n' "$(head -c 24 /dev/urandom | base64 | tr -d /+=)" > ~/.config/cue-render/env && chmod 600 ~/.config/cue-render/env
+systemctl --user enable --now comfyui cue-render
+# TLS in front of it, so a GitHub-Pages (https) site may call it: DNS A record render.patpadgett.com → this VM, then
+sudo cp render/nginx-render.conf /etc/nginx/sites-available/render.patpadgett.com && sudo ln -s /etc/nginx/sites-available/render.patpadgett.com /etc/nginx/sites-enabled/ && sudo certbot --nginx -d render.patpadgett.com
+```
+
+Models in ComfyUI: `diffusion_models/wan2.2_ti2v_5B_fp16.safetensors`, `text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors`, `vae/wan2.2_vae.safetensors` (Comfy-Org/Wan_2.2_ComfyUI_Repackaged), plus `custom_nodes/cue_dmd_sigmas.py` for the turbo mode. The job API (`POST /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/video`, `GET /health`; `Authorization: Bearer`) answers CORS for the site's origin. One job renders at a time; the queue lives in `~/.cache/cue-render/jobs.json`, finished clips are kept 24 h.
+
+In the site: SETUP → engine *This GPU* → the box URL and token. The RENDER key reads FREE; the desk line gives the queue time. Visitors without the token get the demo (its cue sheet is checked in); the owner's Azure keys for the cue sheet live in `localStorage` only.
 
 ### What a render costs
 
-The RENDER key shows it before you press it: scenes × their clip lengths × $0.10/s. Clips are 4, 8 or 12 s and scenes are capped at one clip in length, so cost tracks how often the video cuts: the demo's 26 scenes over 3 minutes are $18.40; a sheet that cuts every bar would be about twice that, one that holds 12-second shots about half. Clips are cached per scene, size and prompt, so re-rendering after editing one cue only pays for that scene, and switching 16:9 → 9:16 renders a second set. RETAKE (on a scene's tile or its running-order row) renders that one scene again for the price of its clip and touches nothing else; STOP starts no new clips (the two in flight finish — Azure bills them the moment they are created); RENDER on an open desk resumes it and retries failures without re-paying for anything finished. If a clip fails, the FOOTAGE line names the reason in full.
+Nothing in money; time on the GPU. The RENDER key shows the clip count; the desk line says how long the sheet is in hours and the tiles show their place in the queue and an ETA. Clips are cached per scene, size, model and prompt, so re-rendering after editing one cue only renders that scene, and switching 16:9 → 9:16 renders a second set. RETAKE (on a scene's tile or its running-order row) renders that one scene again and touches nothing else; STOP submits nothing new; RENDER on an open desk resumes it and retries failures. If a clip fails, the FOOTAGE line names the reason in full.
 
 ## Files
 
-- `index.html`, `cue.css` — the gallery: monitor wall, clock strip, running order, render desk, SETUP dialog.
+- `index.html`, `cue.css` — the gallery: monitor wall, clock strip, running order, render desk, SETUP dialog with the engine picker.
 - `js/cue.js` — controller (load → analyse → lyrics → cues → play → render → export).
 - `js/analyze.worker.js` — tempo (autocorrelation + prior), beats (Ellis DP), downbeats, key (Krumhansl–Schmuckler), loudness per beat.
 - `js/align.js` — lyric line ↔ transcript word alignment.
 - `js/treatment.js` — the system prompt and JSON schema the treatment model fills; `tools/build-demo-cues.mjs` runs it to produce `assets/demo/cues.json`.
-- `js/switcher.js` — timeline, light envelopes, clip rate (a 4/8/12 s clip slowed to cover its scene), `normalizeTreatment()` (splits any scene longer than one clip into consecutive scenes; the count is never capped), `drawFrame()`.
-- `js/footage.js` — Sora job pool (RENDER / STOP / resume / per-scene RETAKE), IndexedDB clip cache keyed by song + scene + size + prompt, export (WebCodecs MP4 when `vendor/mp4-muxer.mjs` is present, else MediaRecorder WebM).
-- `js/azure.js` — the only module that talks to Azure; direct and proxy modes.
-- `api/` — Static Web Apps Functions proxy with usage caps. `staticwebapp.config.json`.
+- `js/switcher.js` — timeline, light envelopes, clip rate (a clip shorter than its scene plays slowed), `normalizeTreatment()` (splits any scene over 12 s into consecutive scenes; the count is never capped), `drawFrame()`.
+- `js/engines.js` — the footage engines behind one interface (`plan / create / status / fetch / probe`): the GPU render box (this box, or a second one), Higgsfield (Kling 3.0, Wan 2.6, Seedance 2.5), Sora until it retired; the Azure Speech + Responses client; `MODELS` with each engine's lengths, resolutions and per-second price; `planClip()` (exact whole-second clips) and `estimateCost()`. `js/azure.js` re-exports it for older imports.
+- `js/footage.js` — the render job (RENDER / STOP / resume / per-scene RETAKE; whole-sheet submission with idempotent keys on the GPU engine), IndexedDB clip cache, export (WebCodecs MP4 when `vendor/mp4-muxer.mjs` is present, else MediaRecorder WebM).
+- `render/` — `cue_render.py` (the job server; ComfyUI backend here, a diffusers backend for any other CUDA box), `comfyui.service`, `cue-render.service`, `nginx-render.conf`.
+- `api/` — Static Web Apps Functions proxy (Azure, Higgsfield, render boxes) with daily caps, for a public deployment that pays for visitors; unused on GitHub Pages.
 - `assets/demo/` — "Fare Thee Honey Blues", Mamie Smith & Her Jazz Hounds (1920, public domain) and its generated cue sheet (written to the demo's own direction line, "a rented room and a small-town railway station, 1920…"); `js/demo-lyrics.js` the transcribed lyrics.
-- `tests/unit.mjs` — no browser: the scene cap at five tempos, the splitter, the clip planner, the prompt's numbers. `tests/smoke.mjs` — Playwright: demo loads, clock runs, tally hands off at the first cue boundary, strobe envelope toggles and softens under NO STROBE, an injected clip plays through the switcher, export writes a file, no overflow at 390, RETAKE keys are tap targets. `tests/render.mjs` — the render desk against a mocked Azure: every request is 4/8/12 s and carries the direction, a Sora 400 lands on the desk in full, a clip plays slowed to cover its scene, RENDER retries only the failures, RETAKE re-renders exactly one scene, STOP starts nothing new, no scene is over the cap and the count is open. `tests/live.mjs` — the same against the deployed origin. `tests/overflow.mjs` lists anything wider than the phone viewport.
+- `tests/unit.mjs` — no browser: the scene cap at five tempos, the splitter, every engine's clip planner and price, the prompt's numbers. `tests/smoke.mjs` — Playwright: demo loads, clock runs, tally hands off, strobe envelope toggles and softens under NO STROBE, an injected clip plays through the switcher, export writes a file, no overflow at 390. `tests/render.mjs` — the render desk against mocked engines: exact-length clips, direction and idempotency key on every create, a failure's full reason on the desk, retry only the failures, RETAKE one scene, an nsfw refund not counted as spent, STOP/resume, engine switch rebuilds the desk from that engine's cache, the GPU engine submits the whole sheet, Sora's 4/8/12. `tests/live-gpu.mjs` — the real site against the real render box: three scenes rendered on the T4 and drawn through the switcher. `tests/live.mjs` — the deployed origin. `tests/overflow.mjs` lists anything wider than the phone viewport.
 - `PRODUCT.md`, `DESIGN.md`, `.impeccable/` — product truth, the design system, the surface brief.
 
 ## Running locally
 
-Any static server: `python3 -m http.server 8766` then `node tests/unit.mjs && NODE_PATH=/data/pat/node_modules node tests/smoke.mjs && NODE_PATH=/data/pat/node_modules node tests/render.mjs`. The demo cue sheet is checked in, so the demo plays without Azure; RENDER needs keys. `tools/build-demo-cues.mjs` regenerates the demo sheet (needs the owner's Azure CLI login).
+Any static server: `python3 -m http.server 8766` then `node tests/unit.mjs && NODE_PATH=/data/pat/node_modules node tests/smoke.mjs && NODE_PATH=/data/pat/node_modules node tests/render.mjs`. The demo cue sheet is checked in, so the demo plays without keys; RENDER needs the render box. `tools/build-demo-cues.mjs` regenerates the demo sheet (needs the owner's Azure CLI login).
 
 ## Accessibility
 

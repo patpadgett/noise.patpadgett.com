@@ -2,7 +2,7 @@
 // Run: node tests/unit.mjs
 import assert from 'node:assert/strict';
 import { normalizeTreatment, maxSceneBars, MAX_SCENE_SECONDS, cueStart, cueEnd } from '../js/switcher.js';
-import { clipSeconds, CLIP_LENGTHS, estimateCost } from '../js/azure.js';
+import { clipSeconds, CLIP_LENGTHS, estimateCost, planClip, MODELS } from '../js/engines.js';
 import { treatmentUserMessage } from '../js/treatment.js';
 
 const analysisAt = (bpm, bars = 120) => { const barSec = 4 * 60 / bpm; return { bpm, keyName: 'C major', duration: +(bars * barSec).toFixed(2), barStarts: Array.from({ length: bars }, (_, i) => +(i * barSec).toFixed(3)), barLoud: Array.from({ length: bars }, () => 0.5) }; };
@@ -38,7 +38,7 @@ for (let i = 1; i < 4; i++) assert.ok(Math.abs(cueEnd(a, scenes[i - 1]) - cueSta
 assert.equal(normalizeTreatment(norm, a).cues.length, norm.cues.length, 'idempotent');
 ok('normalizeTreatment splits, drops lyrics, renumbers, is idempotent');
 
-// ---- the planner picks the shortest Sora length that covers the scene with ≤10% slow motion ----
+// ---- the Sora planner (kept for the retiring engine): shortest 4/8/12 that covers the scene with ≤10% slow motion ----
 const beat = 60 / 112.35;
 assert.equal(clipSeconds({ bars: 1 }, beat), 4);   // 2.1 s → 4
 assert.equal(clipSeconds({ bars: 2 }, beat), 4);   // 4.3 s → 4 (4.4 ≥ 4.3)
@@ -48,10 +48,28 @@ assert.equal(clipSeconds({ bars: 5 }, beat), 12);  // 10.7 s → 12
 assert.equal(clipSeconds({ bars: 6 }, beat), 12);  // 12.8 s → 12 (13.2 ≥ 12.8)
 assert.equal(clipSeconds({ bars: 8 }, beat), 12);  // over the cap (only reachable before normalisation): still a legal length
 assert.ok(CLIP_LENGTHS.every((s) => [4, 8, 12].includes(s)));
-// every scene that survives normalisation plans a legal clip length, at any tempo
 for (const bpm of [15, 40, 60, 90, 112.35, 140, 180]) { const an = analysisAt(bpm); const t = normalizeTreatment({ cues: [{ n: 1, kind: 'scene', in: 1, beat: 1, bars: 40, anchor: '', cue: '', shot: 's', effect: 'none', rate: 0, color: '' }] }, an); for (const c of t.cues) assert.ok([4, 8, 12].includes(clipSeconds(c, 60 / bpm)), `legal clip at ${bpm} BPM`); }
-const est = estimateCost(norm, a); assert.equal(est.clips, 5); assert.equal(est.seconds, 12 + 12 + 12 + 4 + 8); assert.equal(est.dollars, 4.8);
-ok('clipSeconds / estimateCost');
+const soraEst = estimateCost(norm, a, { model: 'sora', resolution: '720p' }); assert.equal(soraEst.clips, 5); assert.equal(soraEst.seconds, 12 + 12 + 12 + 4 + 8); assert.equal(soraEst.dollars, 4.8);
+ok('Sora planner: clipSeconds / estimateCost');
+
+// ---- every other engine renders the exact length: whole seconds, rounded up, clamped to the model's range ----
+// scenes in `norm` are 6, 6, 6, 2, 4 bars at 112.35 BPM = 12.8, 12.8, 12.8, 4.3, 8.5 s
+const K = MODELS['kling-std'];
+assert.deepEqual(norm.cues.filter((c) => c.kind === 'scene').map((c) => planClip(c, beat, K, '720p').seconds), [13, 13, 13, 5, 9], 'Kling: ceil to the second, 3–15');
+assert.equal(planClip({ bars: 1 }, beat, K, '720p').seconds, 3, 'a 2.1 s scene gets Kling\'s 3 s minimum (cut at its OUT)');
+assert.equal(planClip({ bars: 1 }, beat, K, '720p').price, +(3 * 0.084).toFixed(3), 'price = seconds × the model\'s rate');
+assert.deepEqual(norm.cues.filter((c) => c.kind === 'scene').map((c) => planClip(c, beat, MODELS['wan-2.6'], '1080p').seconds), [15, 15, 15, 5, 10], 'Wan 2.6: 5/10/15 only');
+assert.deepEqual(norm.cues.filter((c) => c.kind === 'scene').map((c) => planClip(c, beat, MODELS.local, '720p').seconds), [5, 5, 5, 5, 5], 'GPU tier: capped at 5 s (plays slowed past that)');
+assert.equal(planClip({ bars: 1 }, beat, MODELS.local, '720p').seconds, 3, 'GPU tier: 2.1 s → 3 s');
+assert.equal(planClip({ bars: 1 }, beat, MODELS.local, '720p').price, 0, 'own GPU is free');
+assert.equal(planClip({ bars: 2 }, beat, MODELS.box2, '720p').price, 0, 'a second render box is free too');
+assert.equal(planClip({ bars: 2 }, beat, MODELS['kling-std'], '1080p').resolution, '720p', 'a resolution the model lacks falls back to its first');
+const kEst = estimateCost(norm, a, { model: 'kling-std', resolution: '720p' }); assert.equal(kEst.seconds, 13 + 13 + 13 + 5 + 9); assert.equal(kEst.dollars, +(53 * 0.084).toFixed(2)); assert.equal(kEst.free, false);
+const lEst = estimateCost(norm, a, { model: 'local', resolution: '720p' }); assert.equal(lEst.dollars, 0); assert.equal(lEst.free, true);
+const mEst = estimateCost(norm, a, { model: 'box2', resolution: '720p' }); assert.equal(mEst.free, true); assert.equal(mEst.dollars, 0);
+const dEst = estimateCost(norm, a, {}); assert.equal(dEst.free, true, 'the default engine is the owner\'s GPU: free');
+for (const [id, m] of Object.entries(MODELS)) for (const bars of [0.5, 1, 2, 3, 4, 5, 6]) { const p = planClip({ bars }, beat, m, m.resolutions[0]); assert.ok(p.seconds >= m.min && p.seconds <= m.max && Number.isInteger(p.seconds), `${id} at ${bars} bars → ${p.seconds}s within ${m.min}–${m.max}`); if (m.lengths) assert.ok(m.lengths.includes(p.seconds), `${id}: ${p.seconds} is an allowed length`); }
+ok('planClip / estimateCost per engine');
 
 // ---- the prompt tells the model the same cap and an open count ----
 const msg = treatmentUserMessage({ title: 'x', analysis: a, lyrics: 'la', aligned: [], direction: 'Jakarta at night' });

@@ -1,0 +1,15 @@
+# ComfyUI as a user service, the GPU worker behind cue-render. systemctl --user enable --now comfyui
+[Unit]
+Description=ComfyUI (GPU worker for CUE render box)
+After=network-online.target
+Before=cue-render.service
+
+[Service]
+Type=simple
+WorkingDirectory=/data/comfy/ComfyUI
+ExecStart=/data/comfy/ComfyUI/.venv/bin/python main.py --listen 127.0.0.1 --port 8188 --disable-auto-launch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,8 +1,9 @@
-// CUE — footage jobs + export. Sora 2 jobs run through js/azure.js (two at once on the preview);
-// finished clips are kept in IndexedDB keyed by scene so a reload or a format switch does not pay
-// twice. Export draws every frame with the switcher at 30 fps and encodes with WebCodecs
-// (H.264 MP4 via a tiny muxer) when available, else MediaRecorder WebM.
-import { createVideo, videoStatus, downloadVideo, clipSeconds } from './azure.js';
+// CUE — footage jobs + export. Clips are rendered by whichever engine SETUP picks (js/engines.js: Kling via
+// Higgsfield, Wan 2.2 on the owner's GPU, Sora until it retired), a few at once; finished clips are
+// kept in IndexedDB keyed by scene so a reload or a format switch does not pay twice. Export draws every frame
+// with the switcher at 30 fps and encodes with WebCodecs (H.264 MP4 via a tiny muxer) when available, else
+// MediaRecorder WebM.
+import { engine, loadConfig, modelFor } from './engines.js';
 
 // ---- IndexedDB for clips ----
 const DB = 'cue-clips-v1';
@@ -10,37 +11,49 @@ function db() { return new Promise((res, rej) => { const r = indexedDB.open(DB, 
 export async function getClip(key) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips').objectStore('clips').get(key); t.onsuccess = () => res(t.result || null); t.onerror = () => res(null); }); }
 export async function putClip(key, blob, meta) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips', 'readwrite').objectStore('clips').put({ blob, meta, at: Date.now() }, key); t.onsuccess = () => res(); t.onerror = () => res(); }); }
 export async function deleteClip(key) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips', 'readwrite').objectStore('clips').delete(key); t.onsuccess = () => res(); t.onerror = () => res(); }); }
-// A clip is keyed by what produced it: song, scene, frame size, and the exact prompt (shot + direction). Edit the
-// shot or the direction and the key changes, so the next RENDER pays for that scene again and no other.
-export const clipKey = (songId, scene, size, direction = '') => `${songId}:${scene.n}:${size}:${hash(scene.shot + '\n' + String(direction || '').trim())}`;
+// A clip is keyed by what produced it: song, scene, frame size, the model, and the exact prompt (shot + direction).
+// Edit the shot, the direction or the model and the key changes, so the next RENDER pays for that scene again and no other.
+export const clipKey = (songId, scene, size, direction = '', model = loadConfig().model) => `${songId}:${scene.n}:${size}:${model}:${hash(scene.shot + '\n' + String(direction || '').trim())}`;
 function hash(s) { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); }
 
-// ---- the render job: every scene → one clip, two in flight ----
-// stopped = start nothing new; clips already in flight finish (Azure bills them the moment they are created,
+// ---- the render job: every scene → one clip, a few in flight ----
+// stopped = start nothing new; clips already in flight finish (paid engines bill the moment a job is accepted,
 // so abandoning them would only lose footage). detach() hands the pool off silently when the desk is replaced.
+// Pool width: Higgsfield's default account limit is 4 concurrent; Sora's preview is 2; a GPU box queues
+// everything itself, so the pool just keeps a few status polls going.
 export class FootageJob {
   constructor({ songId, scenes, analysis, size, direction = '', onUpdate }) {
     Object.assign(this, { songId, scenes, analysis, size, direction, onUpdate });
-    this.items = scenes.map((s) => ({ scene: s, state: 'queued', progress: 0, id: null, blob: null, url: null, error: null, cached: false, retake: 0, seconds: clipSeconds(s, 60 / analysis.bpm) }));
-    this.stopped = false; this.inflight = 0; this.MAX = 2;
+    this.cfg = loadConfig(); this.model = modelFor(this.cfg); this.engine = engine(this.cfg);
+    const beat = 60 / analysis.bpm;
+    this.items = scenes.map((s) => { const p = this.engine.plan(s, beat); return { scene: s, state: 'queued', progress: 0, id: null, blob: null, url: null, error: null, cached: false, retake: 0, seconds: p.seconds, price: p.price, eta: null, position: null }; });
+    this.stopped = false; this.inflight = 0; this.MAX = this.engine.name === 'sora' ? 2 : this.engine.name === 'gpu' ? 3 : 4;
   }
   async start() {
     // anything already in the cache lands instantly
     for (const it of this.items) { const c = await getClip(this.key(it)); if (c) { it.blob = c.blob; it.url = URL.createObjectURL(c.blob); it.state = 'done'; it.progress = 1; it.cached = true; } }
     this.emit(); this.pump();
   }
-  key(it) { return clipKey(this.songId, it.scene, this.size, this.direction); }
+  // A GPU render box keeps its own persistent queue, so the whole sheet is submitted at once (idempotent keys: re-sending
+  // after a reload or a restart re-attaches to the same jobs) and the pool's width only bounds how many status polls run.
+  // Paid engines are submitted a few at a time so STOP can actually stop spending.
+  get submitAll() { return this.engine.name === 'gpu'; }
+  pump() {
+    if (!this.stopped) {
+      if (this.submitAll) { for (const it of this.items) if (it.state === 'queued') this.run(it); }
+      else while (this.inflight < this.MAX) { const next = this.items.find((i) => i.state === 'queued'); if (!next) break; this.run(next); }
+    }
+    if (this.done || (this.stopped && !this.inflight)) this.emit();
+  }
+  key(it) { return clipKey(this.songId, it.scene, this.size, this.direction, this.cfg.model); }
   emit() { this.onUpdate && this.onUpdate(this); }
   get done() { return this.items.every((i) => i.state === 'done' || i.state === 'failed'); }
   get queued() { return this.items.filter((i) => i.state === 'queued').length; }
-  // what Azure has been asked to generate, every attempt counted: a create that got a job id is billed, a create
-  // rejected with a 400 is not; a retake of a finished scene bills again
+  // what the engine has been asked to generate, every attempt counted: a create that got a job id is billed, a create
+  // rejected with a 400 is not; a retake of a finished scene bills again. In seconds, and in dollars at the model's rate.
   get spent() { return this.items.reduce((s, i) => s + (i.billed || 0), 0); }
+  get spentDollars() { return +this.items.reduce((s, i) => s + (i.billedDollars || 0), 0).toFixed(2); }
   get attempted() { return this.items.some((i) => i.state !== 'queued' && !i.cached); }
-  pump() {
-    if (!this.stopped) while (this.inflight < this.MAX) { const next = this.items.find((i) => i.state === 'queued'); if (!next) break; this.run(next); }
-    if (this.done || (this.stopped && !this.inflight)) this.emit();
-  }
   // RENDER again on the same desk: failures go back in the queue, the pool resumes. Done clips are not touched.
   resume() { for (const it of this.items) if (it.state === 'failed') Object.assign(it, { state: 'queued', progress: 0, id: null, error: null }); this.stopped = false; this.emit(); this.pump(); }
   // Another take of ONE scene: forget its cached clip and queue it again; nothing else is touched or paid for.
@@ -51,25 +64,27 @@ export class FootageJob {
     if (it.url) URL.revokeObjectURL(it.url);
     Object.assign(it, { state: 'queued', progress: 0, id: null, blob: null, url: null, error: null, cached: false, retake: it.retake + 1 });
     this.emit();
-    if (this.stopped) { while (this.inflight >= this.MAX) await sleep(500); if (it.state === 'queued') this.run(it); } else this.pump();
+    if (this.stopped) { while (!this.submitAll && this.inflight >= this.MAX) await sleep(500); if (it.state === 'queued') this.run(it); } else this.pump();
     return true;
   }
   async run(it) {
     this.inflight++; it.state = 'creating'; this.emit();
     try {
       const prompt = soraPrompt(it.scene, this.size, this.direction);
-      const v = await createVideo({ prompt, size: this.size, seconds: it.seconds });
-      it.id = v.id; it.billed = (it.billed || 0) + it.seconds; it.state = 'running'; this.emit();
+      // the idempotency key names this exact attempt: a network retry of the same create never makes a second job
+      const v = await this.engine.create({ prompt, size: this.size, seconds: it.seconds, key: `${this.key(it)}:${it.retake}` });
+      it.id = v.id; if (v.secPerSec) this.secPerSec = v.secPerSec; it.billed = (it.billed || 0) + it.seconds; it.billedDollars = (it.billedDollars || 0) + it.price; it.state = 'running'; this.emit();
       for (;;) {
-        await sleep(4000);
-        const s = await videoStatus(it.id);
-        it.progress = (s.progress || 0) / 100; this.emit();
-        if (s.status === 'completed') break;
-        if (s.status === 'failed' || s.status === 'cancelled') throw new Error(s.error?.message || `job ${s.status}`);
+        // a GPU box renders one clip at a time and a whole sheet is queued on it: poll the ones far back in the line slowly
+        await sleep(this.submitAll && it.position > 1 ? 15000 : 4000);
+        const s = await this.engine.status(it.id);
+        it.progress = s.progress || 0; it.eta = s.eta ?? null; it.position = s.position ?? null; this.emit();
+        if (s.status === 'done') { it.statusResult = s; break; }
+        if (s.status === 'failed') { if (/not charged|nsfw|content filter/i.test(s.error || '')) { it.billed -= it.seconds; it.billedDollars -= it.price; } throw new Error(s.error || 'job failed'); }
       }
       it.state = 'downloading'; this.emit();
-      const blob = await downloadVideo(it.id);
-      await putClip(this.key(it), blob, { id: it.id, prompt, seconds: it.seconds, size: this.size, at: Date.now() });
+      const blob = await this.engine.fetch(it.id, it.statusResult);
+      await putClip(this.key(it), blob, { id: it.id, prompt, seconds: it.seconds, size: this.size, model: this.cfg.model, at: Date.now() });
       // 'done' means everything is done, cache included; the emit in finally follows with no await between
       it.blob = blob; it.url = URL.createObjectURL(blob); it.state = 'done'; it.progress = 1;
     } catch (e) {
@@ -83,8 +98,8 @@ export class FootageJob {
 export const busy = (it) => it.state === 'creating' || it.state === 'running' || it.state === 'downloading';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Sora 2's content rules bind the prompt: no real people, brands or copyrighted characters, no text. The
-// treatment prompt already writes shots that way; this adds the artist's direction, the frame and the house style.
+// Every engine's content rules bind the prompt the same way: no real people, brands or copyrighted characters, no text.
+// The treatment prompt already writes shots that way; this adds the artist's direction, the frame and the house style.
 export function soraPrompt(scene, size, direction = '') {
   const frame = size === '720x1280' ? 'vertical 9:16 frame composed for a phone screen' : 'cinematic 16:9 frame';
   const dir = String(direction || '').trim();

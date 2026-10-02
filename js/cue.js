@@ -1,5 +1,5 @@
 // CUE — the controller. One screen, three states: nosource → onair → render.
-import { loadConfig, saveConfig, configured, probe, transcribe, writeTreatment, estimateCost } from './azure.js';
+import { loadConfig, saveConfig, configured, footageConfigured, probe, transcribe, writeTreatment, estimateCost, MODELS, modelFor } from './engines.js';
 import { alignLyrics, flattenWords, stanzas } from './align.js';
 import { timeline, sceneAt, nextCue, drawFrame, barAt, barTime, fmtTC, fmtIn, fmtCountdown, clipRate, clipTime, normalizeTreatment } from './switcher.js';
 import { FootageJob, exportVideo, download, busy } from './footage.js';
@@ -51,10 +51,12 @@ class App {
     $('#nostrobe').addEventListener('change', () => this.updateCost());
     // setup dialog
     $('#setup').addEventListener('click', () => this.openSetup());
-    $('#setup-test').addEventListener('click', async () => { this.readSetupForm(); $('#probe').textContent = 'Testing…'; const r = await probe(); $('#probe').textContent = `OpenAI: ${r.openai} · Speech: ${r.speech}`; });
+    $('#setup-test').addEventListener('click', async () => { this.readSetupForm(); $('#probe').textContent = 'Testing…'; const r = await probe(); $('#probe').textContent = `Azure chat: ${r.openai} · Speech: ${r.speech} · ${r.engine}: ${r.footage}`; });
     $('#setup-forget').addEventListener('click', () => { localStorage.removeItem('cue.azure.v1'); $('#setupdlg').close(); this.toast('Keys forgotten.'); });
-    $('#setupdlg').addEventListener('close', () => { if ($('#setupdlg').returnValue === 'save') { this.readSetupForm(); this.toast('Saved in this browser only.'); } });
+    $('#setupdlg').addEventListener('close', () => { if ($('#setupdlg').returnValue === 'save') { this.readSetupForm(); this.toast(`Saved in this browser only · footage by ${modelFor().label}.`); this.onEngineChange(); } });
     $$('input[name=mode]').forEach((r) => r.addEventListener('change', () => { $('#setup-direct').hidden = r.value === 'proxy' && r.checked; }));
+    $('#setup-model').addEventListener('change', () => this.syncSetupEngine());
+    $('#setup-res').addEventListener('change', () => this.syncSetupEngine());
     // running order: click a row to seek; edit a cue sentence inline
     $('#ro-body').addEventListener('click', (e) => { if (e.target.closest('.redo')) return; const tr = e.target.closest('tr[data-start]'); if (!tr || e.target.isContentEditable) return; this.seek(+tr.dataset.start); });
     $('#ro-body').addEventListener('input', (e) => { const td = e.target.closest('.cue[contenteditable]'); if (!td) return; const c = this.treatment.cues.find((x) => x.n === +td.closest('tr').dataset.n); if (c) c.cue = td.textContent.trim(); });
@@ -62,8 +64,26 @@ class App {
   }
 
   // ---------- setup ----------
-  openSetup() { const cfg = loadConfig(); const f = $('#setupdlg form'); for (const el of f.elements) if (el.name && el.name !== 'mode') el.value = cfg[el.name] || ''; f.elements.mode.value = cfg.mode || 'direct'; $('#setup-direct').hidden = cfg.mode === 'proxy'; $('#probe').textContent = configured(cfg) ? 'Configured.' : 'Not configured: the demo works without keys; your own songs need them.'; $('#setupdlg').showModal(); }
+  openSetup() {
+    const cfg = loadConfig(); const f = $('#setupdlg form');
+    const sel = $('#setup-model'); if (!sel.options.length) for (const [id, m] of Object.entries(MODELS)) sel.appendChild(Object.assign(document.createElement('option'), { value: id, textContent: m.label }));
+    for (const el of f.elements) if (el.name && el.name !== 'mode') el.value = cfg[el.name] || (el.name === 'model' ? 'local' : el.name === 'resolution' ? '720p' : '');
+    f.elements.mode.value = cfg.mode || 'direct'; $('#setup-direct').hidden = cfg.mode === 'proxy';
+    this.syncSetupEngine();
+    $('#probe').textContent = configured(cfg) ? (footageConfigured(cfg) ? 'Configured.' : `Cue sheet configured; ${modelFor(cfg).label} still needs its key.`) : 'Not configured: the demo works without keys; your own songs need them.';
+    $('#setupdlg').showModal();
+  }
+  // show only the chosen engine's fields; keep the resolution menu honest about what the model renders; say the price
+  syncSetupEngine() {
+    const id = $('#setup-model').value, m = MODELS[id] || MODELS.local;
+    $$('#setup-direct .setup__grid[data-engine]').forEach((g) => g.classList.toggle('is-on', g.dataset.engine === (m.engine === 'higgsfield' ? 'higgsfield' : id)));
+    const res = $('#setup-res'); for (const o of res.options) o.disabled = !m.resolutions.includes(o.value); if (!m.resolutions.includes(res.value)) res.value = m.resolutions[0];
+    const price = m.price[res.value] ?? 0;
+    $('#setup-model-note').textContent = `${m.note} · ${price ? `$${price.toFixed(3)} per second of footage` : 'no per-clip charge'} · clips ${m.lengths ? m.lengths.join('/') + ' s' : `${m.min}–${m.max} s`}`;
+  }
   readSetupForm() { const f = $('#setupdlg form'); const cfg = { mode: f.elements.mode.value }; for (const el of f.elements) if (el.name && el.name !== 'mode' && el.value) cfg[el.name] = el.value.trim(); saveConfig(cfg); }
+  // a new engine means new clips: the desk is rebuilt from the cache for that model, nothing is rendered
+  onEngineChange() { this.updateCost(); if (this.job) { this.job.detach(); this.job = null; if (this.state === 'render') this.openDesk(true); } }
 
   // ---------- load ----------
   ensureCtx() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if (this.ctx.state === 'suspended') this.ctx.resume(); return this.ctx; }
@@ -141,7 +161,9 @@ class App {
     this.drawPVW(true);
   }
   resetRenderKey() { const k = $('#render'); k.textContent = 'RENDER '; k.appendChild(Object.assign(document.createElement('small'), { id: 'render-cost' })); k.disabled = !this.treatment; $('#render-cancel').disabled = false; this.updateCost(); }
-  updateCost() { if (!this.treatment) return; const est = estimateCost(this.treatment, this.analysis); $('#render-cost').textContent = `$${est.dollars.toFixed(2)} · ${est.clips} clips`; this.est = est; }
+  // the RENDER key says what footage will cost before it is pressed: dollars at the chosen model's rate, or FREE / INCLUDED for the GPU tiers
+  costLabel(est = this.est) { return est.free ? `FREE · ${est.clips} clips` : `$${est.dollars.toFixed(2)} · ${est.clips} clips`; }
+  updateCost() { if (!this.treatment) return; const est = estimateCost(this.treatment, this.analysis); this.est = est; const c = $('#render-cost'); if (c) c.textContent = this.costLabel(est); $('#render').title = `Footage by ${est.model}`; }
   renderRundown() {
     const body = $('#ro-body'); body.replaceChildren();
     if (!this.tl) return;
@@ -247,31 +269,36 @@ class App {
   }
   async render() {
     if (!this.treatment) return;
-    if (!configured()) { this.openSetup(); return this.toast('Rendering footage needs Azure keys (SETUP).', true); }
+    if (!footageConfigured()) { this.openSetup(); return this.toast(`Rendering footage needs a key for ${modelFor().label} (SETUP).`, true); }
     if (this.job) { this.job.resume(); return; } // same treatment and size: resume, re-queue failures, pay for nothing already in
-    const est = this.est; $('#renderdesk').hidden = false; $('#render-line').textContent = `${est.clips} clips · ${est.seconds}s of footage · about $${est.dollars.toFixed(2)} on your Azure, less whatever is already cached. Two render at a time; a 3-minute song takes 10–20 minutes. Keep listening.`;
+    const est = this.est, m = modelFor(); $('#renderdesk').hidden = false;
+    const time = m.engine === 'gpu' ? `One clip at a time on your GPU, about 5 minutes per second of footage: this sheet is roughly ${Math.round(est.seconds * 300 / 3600 * 10) / 10} hours. The queue lives on the render box, so you can close this tab; RENDER later collects what has finished.` : `${this.job?.MAX || 4} render at a time; a 3-minute song takes 10–20 minutes. Keep listening.`;
+    const money = est.free ? 'free' : `about $${est.dollars.toFixed(2)} on your ${m.engine === 'higgsfield' ? 'Higgsfield balance' : 'Azure'}`;
+    $('#render-line').textContent = `${est.clips} clips · ${est.seconds}s of footage by ${m.label} · ${money}, less whatever is already cached. ${time}`;
     await this.openDesk(false);
     $('#renderdesk').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+  cfg() { return loadConfig(); }
   // Another take of one scene. Costs that scene's clip and nothing else; the rest of the desk is untouched.
   async retake(n) {
     if (!this.treatment) return;
-    if (!configured()) { this.openSetup(); return this.toast('Rendering footage needs Azure keys (SETUP).', true); }
+    if (!footageConfigured()) { this.openSetup(); return this.toast(`Rendering footage needs a key for ${modelFor().label} (SETUP).`, true); }
     const job = await this.openDesk(true); // opening a fresh desk for one retake renders only that scene
     const it = job.items.find((i) => i.scene.n === n); if (!it) return;
     if (busy(it)) return this.toast(`Scene ${String(n).padStart(2, '0')} is already rendering.`, true);
     this.clips.delete(n); // the old take leaves the monitor at once
     const li = $(`#jobs li[data-n="${n}"]`); if (li) { const thumb = li.querySelector('.job__thumb'); const cv = document.createElement('canvas'); cv.width = 320; cv.height = 180; thumb.replaceChildren(cv); drawFrame(cv.getContext('2d'), 320, 180, it.scene.start + 0.02, this.tl, this.analysis, { clipFor: () => null, palette: this.treatment.palette }); }
     this.drawPVW(true);
-    this.toast(`Scene ${String(n).padStart(2, '0')}: another take · $${(it.seconds * 0.10).toFixed(2)}.`); li?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    this.toast(`Scene ${String(n).padStart(2, '0')}: another take${it.price ? ` · $${it.price.toFixed(2)}` : ''}.`); li?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     await job.retake(n);
   }
+  priceTag(it) { return it.price ? `$${it.price.toFixed(2)}` : 'free'; }
   renderJobs() {
     const ol = $('#jobs'); ol.replaceChildren();
     for (const it of this.job.items) {
       const li = document.createElement('li'); li.className = 'job'; li.dataset.n = it.scene.n;
-      li.innerHTML = `<div class="job__thumb"><canvas width="320" height="180"></canvas></div><div class="job__meta"><span class="job__n">SCENE ${String(it.scene.n).padStart(2, '0')}</span><span class="job__state">queued</span><span class="job__len">${it.seconds}s</span><div class="job__bar"><b></b></div><button class="job__redo" type="button" disabled title="Another take of this scene only · $${(it.seconds * 0.10).toFixed(2)}">RETAKE · $${(it.seconds * 0.10).toFixed(2)}</button></div>`;
-      // clips come in 4/8/12 s; say so when the clip will play slowed to cover a longer scene
+      li.innerHTML = `<div class="job__thumb"><canvas width="320" height="180"></canvas></div><div class="job__meta"><span class="job__n">SCENE ${String(it.scene.n).padStart(2, '0')}</span><span class="job__state">queued</span><span class="job__len">${it.seconds}s</span><div class="job__bar"><b></b></div><button class="job__redo" type="button" disabled title="Another take of this scene only · ${this.priceTag(it)}">RETAKE · ${this.priceTag(it)}</button></div>`;
+      // most engines render the exact length; Sora's 4/8/12 and the 5 s GPU cap can leave a clip shorter than its scene, which then plays slowed
       const sceneLen = it.scene.end - it.scene.start, rate = clipRate(it.scene, it.seconds);
       li.querySelector('.job__len').title = rate < 0.995 ? `${it.seconds} s clip over a ${sceneLen.toFixed(1)} s scene · plays at ${rate.toFixed(2)}×` : `${it.seconds} s clip · ${sceneLen.toFixed(1)} s scene`;
       ol.appendChild(li);
@@ -283,7 +310,8 @@ class App {
       const li = $(`#jobs li[data-n="${it.scene.n}"]`); if (!li) continue;
       li.className = 'job' + (it.state === 'running' || it.state === 'creating' || it.state === 'downloading' ? ' is-running' : it.state === 'done' ? ' is-done' : it.state === 'failed' ? ' is-failed' : '');
       const st = li.querySelector('.job__state');
-      st.textContent = it.state === 'failed' ? 'failed' : it.state === 'running' ? `rendering ${Math.round(it.progress * 100)}%` : it.cached ? 'done · cached' : it.state === 'done' && it.retake ? `done · take ${it.retake + 1}` : it.state;
+      const eta = it.state === 'running' && it.eta ? ` · ${it.eta >= 90 ? Math.round(it.eta / 60) + ' min' : it.eta + ' s'} left` : it.state === 'running' && it.position ? ` · ${it.position} ahead` : '';
+      st.textContent = it.state === 'failed' ? 'failed' : it.state === 'running' ? (it.progress > 0 ? `rendering ${Math.round(it.progress * 100)}%${eta}` : `queued on the GPU${eta}`) : it.cached ? 'done · cached' : it.state === 'done' && it.retake ? `done · take ${it.retake + 1}` : it.state;
       // the whole reason, where a tile cannot: on the tile's tooltip and in the desk line below
       if (it.state === 'failed') { li.title = it.error || 'failed'; st.title = it.error || 'failed'; } else { li.removeAttribute('title'); st.removeAttribute('title'); }
       li.querySelector('.job__bar b').style.width = Math.round(it.progress * 100) + '%';
@@ -299,18 +327,20 @@ class App {
     const done = j.items.filter((i) => i.state === 'done').length, failedItems = j.items.filter((i) => i.state === 'failed'), failed = failedItems.length;
     // one line of truth for progress; the failure reason gets its own line under it so it is never cut to a tile or crammed into a sentence
     const reasons = [...new Set(failedItems.map((i) => String(i.error || '').replace(/[.\s]+$/, '')).filter(Boolean))];
-    const spent = `$${(j.spent * 0.10).toFixed(2)}`;
+    // on a GPU box the honest figure is machine time, not footage seconds: footage × the box's measured seconds-per-second
+    const gpuMin = (secs) => { const m = Math.round(secs * (j.secPerSec || 300) / 60); return m >= 90 ? `${(m / 60).toFixed(1)} h` : `${m} min`; };
+    const spent = j.model.engine === 'gpu' ? `${gpuMin(j.spent)} of GPU time` : `$${j.spentDollars.toFixed(2)}`;
     const line = $('#render-line'), key = $('#render'), whyEl = $('#render-why');
     // the reason a clip failed goes on its own line, whole; the status line stays one sentence
     whyEl.hidden = !failed; whyEl.textContent = failed ? `${failed === 1 ? 'The failed clip' : `${failed} clips failed; the first`} said: ${reasons[0] || 'no reason given'}.${reasons.length > 1 ? ` (${reasons.length} different reasons; each tile's tooltip has its own.)` : ''}` : '';
     if (!j.attempted && !j.inflight && j.stopped) { // a fresh desk (format switched, or opened for a retake that has not started): nothing spent yet
-      const est = this.est, toGo = j.items.filter((i) => i.state === 'queued').reduce((s, i) => s + i.seconds, 0);
-      line.textContent = `${done} of ${j.items.length} clips cached for this format · ${j.queued} to render · about $${(toGo * 0.10).toFixed(2)} on your Azure.${est.clips ? ' Two render at a time.' : ''} RETAKE on a scene renders that one alone.`;
+      const est = this.est, toGo = j.items.filter((i) => i.state === 'queued'), toGoSecs = toGo.reduce((s, i) => s + i.seconds, 0), toGoD = toGo.reduce((s, i) => s + (i.price || 0), 0);
+      line.textContent = `${done} of ${j.items.length} clips cached for this format and engine · ${j.queued} to render${toGoD ? ` · about $${toGoD.toFixed(2)}` : toGoSecs ? ` · ${toGoSecs}s of footage, free` : ''}. ${j.MAX} render at a time. RETAKE on a scene renders that one alone.`;
       this.resetRenderKey(); key.disabled = false; $('#render-cancel').disabled = true; $('#export').disabled = !(done > 0); return;
     }
     if (j.done) { line.textContent = `${done} of ${j.items.length} clips in${failed ? `, ${failed} failed` : ''}. ${spent} spent.${failed ? ' RENDER retries the failed ones; ' : ' '}RETAKE on a scene renders that one again.`; key.textContent = failed ? 'RETRY FAILED' : 'RENDER AGAIN'; }
     else if (j.stopped && !j.inflight) { line.textContent = `Stopped: ${done} of ${j.items.length} clips in · ${j.queued} not rendered${failed ? ` · ${failed} failed` : ''} · ${spent} spent. RENDER for the rest, or RETAKE a scene.`; key.textContent = 'RENDER THE REST'; }
-    else if (j.stopped) { line.textContent = `Stopping: ${j.inflight} still rendering (already paid for) · ${done} of ${j.items.length} in · ${spent} spent.`; key.textContent = 'RENDER THE REST'; }
+    else if (j.stopped) { line.textContent = `Stopping: ${j.inflight} still rendering (already ${j.model.engine === 'gpu' ? 'queued' : 'paid for'}) · ${done} of ${j.items.length} in · ${spent} spent.`; key.textContent = 'RENDER THE REST'; }
     else { line.textContent = `${done} of ${j.items.length} clips in · ${j.inflight} rendering${j.queued ? ` · ${j.queued} queued` : ''}${failed ? ` · ${failed} failed` : ''} · ${spent} committed so far`; key.textContent = 'RENDERING…'; }
     key.disabled = !j.stopped && !j.done; $('#render-cancel').disabled = j.stopped || j.done;
     $('#export').disabled = !(done > 0);
