@@ -13,9 +13,9 @@ console.log('title:', await page.title(), '| state:', await page.evaluate(() => 
 await page.screenshot({ path: shots + '/desk-nosource.png', fullPage: true });
 await page.click('#try');
 await page.waitForFunction(() => document.body.dataset.state === 'onair' && document.querySelectorAll('#ro-body tr').length > 10, null, { timeout: 120000 });
-const deck = await page.evaluate(() => ({ rows: document.querySelectorAll('#ro-body tr').length, sections: document.querySelectorAll('#ro-body .sec').length, cost: document.querySelector('#render-cost').textContent, treat: document.querySelector('#treatment').textContent.slice(0, 80), bpm: window.cue.analysis.bpm, pvw: [...document.querySelectorAll('.mon--pvw .mon__tally span')].map((s) => s.textContent) }));
+const deck = await page.evaluate(() => { const tl = window.cue.tl; return { rows: document.querySelectorAll('#ro-body tr').length, scenes: tl.scenes.length, barsCovered: tl.scenes.reduce((s, c) => s + c.bars, 0), bars: window.cue.analysis.barStarts.length, cost: document.querySelector('#render-cost').textContent, treat: document.querySelector('#treatment').textContent.slice(0, 80), bpm: window.cue.analysis.bpm, pvw: [...document.querySelectorAll('.mon--pvw .mon__tally span')].map((s) => s.textContent) }; });
 console.log('deck:', JSON.stringify(deck));
-if (deck.rows < 20) errors.push('too few cue rows');
+if (deck.scenes < 8 || deck.barsCovered < deck.bars) errors.push('cue sheet incomplete (scenes must cover every bar)');
 // play across the first cue boundary after 20 s (read from the cue sheet, so a regenerated treatment keeps the test honest) and watch the tally move
 const boundary = await page.evaluate(() => window.cue.tl.cues.map((c) => c.start).filter((t) => t > 20).sort((a, b) => a - b)[0]);
 console.log('tally boundary at', boundary.toFixed(2), 's');
