@@ -2,7 +2,7 @@
 import { loadConfig, saveConfig, configured, footageConfigured, probe, transcribe, writeTreatment, estimateCost, MODELS, modelFor } from './engines.js';
 import { alignLyrics, flattenWords, stanzas } from './align.js';
 import { timeline, sceneAt, nextCue, drawFrame, barAt, barTime, fmtTC, fmtIn, fmtCountdown, clipRate, clipTime, normalizeTreatment } from './switcher.js';
-import { FootageJob, exportVideo, download, busy } from './footage.js';
+import { FootageJob, exportVideo, download, busy, saveSession, getSession, latestSession, deleteSession } from './footage.js';
 import { DEMO_TITLE, DEMO_LYRICS } from './demo-lyrics.js';
 
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -21,6 +21,20 @@ class App {
     this.bind(); this.loop = this.loop.bind(this); requestAnimationFrame(this.loop);
     this.setState('nosource');
     if (location.hash === '#demo') this.loadDemo();
+    else this.offerResume();
+  }
+  // The load screen shows RESUME when a previous session is on this browser: the sheet, the direction and — if a render
+  // was open — the desk come back exactly as they were, and the box's queue is re-attached by key. Nothing is re-rendered.
+  async offerResume() {
+    try {
+      const s = await latestSession(); const k = $('#resume'); if (!s || !s.audio) { k.hidden = true; return; }
+      const age = Date.now() - s.at, when = age < 3600e3 ? `${Math.max(1, Math.round(age / 60e3))} min ago` : age < 86400e3 ? `${Math.round(age / 3600e3)} h ago` : `${Math.round(age / 86400e3)} d ago`;
+      k.hidden = false; k.textContent = `RESUME · ${s.title || 'last song'} · ${s.desk ? 'render in progress' : 'cue sheet'} · ${when}`; k.onclick = () => this.resumeSession(s);
+    } catch (e) { console.warn(e); }
+  }
+  async resumeSession(s) {
+    this.title = s.title || 'song';
+    try { await this.loadAudio(s.audio.slice(0), s.title || 'song'); } catch (e) { console.error(e); return this.toast('Could not reopen that song: ' + e.message, true); }
   }
   setState(s) { document.body.dataset.state = s; this.state = s; }
   toast(msg, warn = false) { const t = $('#toast'); t.textContent = msg; t.classList.toggle('is-warn', warn); t.classList.add('is-on'); clearTimeout(this._tt); this._tt = setTimeout(() => t.classList.remove('is-on'), warn ? 7000 : 3600); }
@@ -103,21 +117,39 @@ class App {
   progress(label, p) { const w = $('#prog-wrap'); if (label == null) { w.hidden = true; return; } w.hidden = false; $('#prog-k').textContent = label; $('#prog').style.width = Math.round(p * 100) + '%'; }
   async loadAudio(arrayBuffer, name, demo = null) {
     this.stop(); this.setState('nosource'); this.treatment = null; this.tl = null; this.analysis = null; this.clips.clear(); if (this.job) { this.job.detach(); this.job = null; } $('#renderdesk').hidden = true; this.resetRenderKey();
+    this.demo = demo; // the demo's sheet is checked in; only the owner's own songs are saved as sessions
     this.progress('DECODING', 0.1);
     const ctx = this.ensureCtx();
+    this.audioBytes = arrayBuffer.slice(0); // kept for the session: the song itself has to come back with the sheet
     this.buffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
     this.songId = await songId(this.buffer);
     if (this.buffer.duration > 12 * 60) { this.toast('That is over 12 minutes. Trim it first.', true); return this.progress(null); }
+    // the same song again: its session (sheet, direction, and an open render) comes back instead of being analysed afresh
+    const saved = demo ? null : await getSession(this.songId).catch(() => null);
     this.progress('LISTENING · TEMPO, BARS, KEY', 0.2);
-    const a = await this.analyze(this.buffer, (p) => this.progress('LISTENING · TEMPO, BARS, KEY', 0.2 + p * 0.5));
-    if (!a.beats || a.beats.length < 8) { this.toast('Could not find a beat in that. Try a song with drums.', true); return this.progress(null); }
-    const bars = []; for (let i = a.phase; i + 3 < a.beats.length; i += 4) bars.push(a.beats[i]);
-    const barLoud = []; for (let i = a.phase, k = 0; i + 3 < a.beats.length; i += 4, k++) barLoud.push(+(a.beatLoud.slice(i, i + 4).reduce((s, v) => s + v, 0) / 4).toFixed(2));
-    this.analysis = { bpm: +a.bpm.toFixed(2), key: a.key, keyName: NOTE[a.key.root] + ' ' + a.key.mode, duration: +this.buffer.duration.toFixed(2), barStarts: bars, barLoud };
+    const a = saved?.analysis ? null : await this.analyze(this.buffer, (p) => this.progress('LISTENING · TEMPO, BARS, KEY', 0.2 + p * 0.5));
+    if (!saved?.analysis && (!a.beats || a.beats.length < 8)) { this.toast('Could not find a beat in that. Try a song with drums.', true); return this.progress(null); }
+    if (saved?.analysis) this.analysis = saved.analysis;
+    else {
+      const bars = []; for (let i = a.phase; i + 3 < a.beats.length; i += 4) bars.push(a.beats[i]);
+      const barLoud = []; for (let i = a.phase, k = 0; i + 3 < a.beats.length; i += 4, k++) barLoud.push(+(a.beatLoud.slice(i, i + 4).reduce((s, v) => s + v, 0) / 4).toFixed(2));
+      this.analysis = { bpm: +a.bpm.toFixed(2), key: a.key, keyName: NOTE[a.key.root] + ' ' + a.key.mode, duration: +this.buffer.duration.toFixed(2), barStarts: bars, barLoud };
+    }
+    const bars = this.analysis.barStarts;
     this.progress(null);
     $('#pgm-label').textContent = this.title; $('#rundown-title').textContent = 'RUNNING ORDER';
     $('#play').disabled = false; $('#another').hidden = false; $('#edit-lyrics').hidden = false;
     if (demo) { this.lyrics = demo.lyrics; this.aligned = demo.aligned; this.direction = demo.direction || ''; $('#lyrics').value = demo.lyrics; $('#direction').value = this.direction; $('#lyrics').dispatchEvent(new Event('input')); this.setTreatment(demo.treatment); this.toast('Demo cue sheet loaded. Press play; the footage renders on RENDER.'); }
+    else if (saved?.treatment) {
+      this.lyrics = saved.lyrics || ''; this.aligned = saved.aligned || []; this.direction = saved.direction || ''; $('#lyrics').value = this.lyrics; $('#direction').value = this.direction; $('#lyrics').dispatchEvent(new Event('input'));
+      this.setTreatment(saved.treatment, { keepSession: true });
+      if (saved.desk) {
+        // a render was open on this song: same format, same takes → the desk re-attaches to the box's jobs by key
+        if (saved.desk.size !== this.size) { const fmt = saved.desk.size === '720x1280' ? '9:16' : '16:9'; $$('input[name=fmt]').forEach((r) => { r.checked = r.value === fmt; }); this.setFormat(fmt); }
+        await this.openDesk(false, saved.desk.retakes || {});
+        this.toast(`Back on the desk: ${this.job.items.filter((i) => i.state === 'done').length} of ${this.job.items.length} clips in. The rest re-attach to the render box.`);
+      } else this.toast(`Cue sheet restored: ${this.treatment.cues.length} cues, ${this.tl.scenes.length} scenes. RENDER when ready.`);
+    }
     else { this.setState('onair'); $('#lyrics-box').hidden = false; $('#lyrics').value = ''; $('#direction').value = ''; this.direction = ''; $('#lyrics').focus(); this.renderRundown(); this.toast(`Found ${Math.round(this.analysis.bpm)} BPM in ${this.analysis.keyName}, ${bars.length} bars. Paste the lyrics.`); }
     this.drawPVW(true);
   }
@@ -149,7 +181,7 @@ class App {
       this.setTreatment(treatment); this.toast(`${this.treatment.cues.length} cues written, ${this.tl.scenes.length} scenes${this.direction ? ', to your direction' : ''}.`);
     } catch (e) { console.error(e); this.progress(null); this.toast('Could not write the cues: ' + e.message, true); }
   }
-  setTreatment(tr) {
+  setTreatment(tr, { keepSession = false } = {}) {
     // scenes are capped in length (one Sora clip), never in number: anything longer is split here before it reaches the desk
     tr = normalizeTreatment(tr, this.analysis);
     this.treatment = tr; this.tl = timeline(tr, this.analysis); $('#lyrics-box').hidden = true;
@@ -159,6 +191,14 @@ class App {
     if (this.job) { this.job.detach(); this.job = null; } this.clips.clear(); $('#renderdesk').hidden = true; this.resetRenderKey();
     this.renderRundown(); this.updateCost(); this.setState('onair'); $('#render').disabled = false;
     this.drawPVW(true);
+    if (!keepSession) this.persist(); // a new sheet replaces the saved one (and forgets any desk that was open on the old sheet)
+  }
+  // Save what the desk needs to come back: the song, its analysis, words, direction, the sheet, and the open render
+  // (format + takes). Clips themselves are already in the clip cache; the box keeps the jobs. Not for the demo.
+  persist() {
+    if (this.demo || !this.songId || !this.audioBytes || !this.treatment) return;
+    const desk = this.job && this.state === 'render' ? { size: this.size, retakes: this.job.retakes, model: this.job.cfg.model } : null;
+    saveSession(this.songId, { title: this.title, audio: this.audioBytes, analysis: this.analysis, lyrics: this.lyrics, aligned: this.aligned, direction: this.direction || '', treatment: this.treatment, desk }).catch((e) => console.warn('session not saved', e));
   }
   resetRenderKey() { const k = $('#render'); k.textContent = 'RENDER '; k.appendChild(Object.assign(document.createElement('small'), { id: 'render-cost' })); k.disabled = !this.treatment; $('#render-cancel').disabled = false; this.updateCost(); }
   // the RENDER key says what footage will cost before it is pressed: dollars at the chosen model's rate, or FREE / INCLUDED for the GPU tiers
@@ -259,12 +299,13 @@ class App {
   // One desk per treatment and frame size. RENDER opens it (or resumes it: failures re-queue, done clips stay);
   // STOP starts nothing new; RETAKE renders one scene again. A new treatment or format throws the desk away.
   setFormat(v) { this.size = v === '9:16' ? '720x1280' : '1280x720'; this.screen.width = v === '9:16' ? 720 : 1280; this.screen.height = v === '9:16' ? 1280 : 720; document.documentElement.style.setProperty('--mon-ratio', v === '9:16' ? '9 / 16' : '16 / 9'); if (this.job) { this.job.detach(); this.job = null; } if (this.state === 'render') this.openDesk(true); else this.drawPVW(true); }
-  async openDesk(stopped = false) {
+  async openDesk(stopped = false, retakes = {}) {
     if (this.job) return this.job;
     this.setState('render'); $('#renderdesk').hidden = false;
-    this.job = new FootageJob({ songId: this.songId, scenes: this.tl.scenes, analysis: this.analysis, size: this.size, direction: this.direction || '', onUpdate: (j) => this.onJob(j) });
+    this.job = new FootageJob({ songId: this.songId, scenes: this.tl.scenes, analysis: this.analysis, size: this.size, direction: this.direction || '', retakes, onUpdate: (j) => this.onJob(j) });
     if (stopped) this.job.stopped = true; // cache only: nothing is rendered until RENDER or a RETAKE
     this.clips.clear(); this.renderJobs(); await this.job.start(); this.drawPVW(true);
+    this.persist(); // the open desk is part of the session: a reload comes back to it
     return this.job;
   }
   async render() {
@@ -294,6 +335,7 @@ class App {
     this.drawPVW(true);
     this.toast(`Scene ${String(n).padStart(2, '0')}: another take${it.price ? ` · $${it.price.toFixed(2)}` : ''}.`); li?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     await job.retake(n);
+    this.persist(); // the take count is part of the session: a reload asks the box for this take, not the old one
   }
   priceTag(it) { return it.price ? `$${it.price.toFixed(2)}` : 'free'; }
   renderJobs() {
@@ -369,7 +411,7 @@ class App {
     btn.disabled = false;
   }
 
-  reset() { this.stop(); if (this.job) { this.job.detach(); this.job = null; } this.buffer = null; this.treatment = null; this.tl = null; this.direction = ''; this.clips.clear(); $('#ro-body').replaceChildren(); $('#treatment').textContent = ''; $('#lyrics-box').hidden = true; $('#renderdesk').hidden = true; $('#play').disabled = true; this.resetRenderKey(); $('#render').disabled = true; $('#pgm-label').textContent = 'NO SOURCE'; $('#pgm-scene').textContent = '—'; $('#pgm-src').textContent = '—'; $('#tc').textContent = '00:00.0'; $('#bar').textContent = '—'; $('#next').textContent = '—'; $('#section').textContent = '—'; $('#another').hidden = true; $('#rewrite').hidden = true; $('#edit-lyrics').hidden = true; $('#strobe-warn').hidden = true; this.setState('nosource'); }
+  reset() { this.stop(); if (this.job) { this.job.detach(); this.job = null; } this.buffer = null; this.audioBytes = null; this.treatment = null; this.tl = null; this.direction = ''; this.clips.clear(); $('#ro-body').replaceChildren(); $('#treatment').textContent = ''; $('#lyrics-box').hidden = true; $('#renderdesk').hidden = true; $('#play').disabled = true; this.resetRenderKey(); $('#render').disabled = true; $('#pgm-label').textContent = 'NO SOURCE'; $('#pgm-scene').textContent = '—'; $('#pgm-src').textContent = '—'; $('#tc').textContent = '00:00.0'; $('#bar').textContent = '—'; $('#next').textContent = '—'; $('#section').textContent = '—'; $('#another').hidden = true; $('#rewrite').hidden = true; $('#edit-lyrics').hidden = true; $('#strobe-warn').hidden = true; this.setState('nosource'); this.offerResume(); }
 }
 
 // ---------- helpers ----------

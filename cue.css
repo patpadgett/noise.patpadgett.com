@@ -88,6 +88,8 @@ body:not([data-state="nosource"]) .mon__nosrc { display: none; }
 .load__big { font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--chalk); }
 .load__small { color: var(--chalk-2); }
 .mon__nosrc .key { justify-self: center; }
+.key--resume { border-color: var(--amber); color: var(--amber); }
+.key--resume:hover { background: rgba(255,176,32,.12); }
 .mon__strobe { position: absolute; left: 10px; top: 10px; padding: 4px 8px; background: var(--amber); color: var(--ink); font-weight: 700; letter-spacing: .08em; border-radius: 2px; }
 
 /* ---------- clock strip ---------- */

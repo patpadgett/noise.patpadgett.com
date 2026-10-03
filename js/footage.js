@@ -7,10 +7,18 @@ import { engine, loadConfig, modelFor } from './engines.js';
 
 // ---- IndexedDB for clips ----
 const DB = 'cue-clips-v1';
-function db() { return new Promise((res, rej) => { const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore('clips'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+function db() { return new Promise((res, rej) => { const r = indexedDB.open(DB, 2); r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains('clips')) d.createObjectStore('clips'); if (!d.objectStoreNames.contains('sessions')) d.createObjectStore('sessions'); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 export async function getClip(key) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips').objectStore('clips').get(key); t.onsuccess = () => res(t.result || null); t.onerror = () => res(null); }); }
 export async function putClip(key, blob, meta) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips', 'readwrite').objectStore('clips').put({ blob, meta, at: Date.now() }, key); t.onsuccess = () => res(); t.onerror = () => res(); }); }
 export async function deleteClip(key) { const d = await db(); return new Promise((res) => { const t = d.transaction('clips', 'readwrite').objectStore('clips').delete(key); t.onsuccess = () => res(); t.onerror = () => res(); }); }
+// ---- sessions: everything the desk needs to come back after a reload, keyed by song ----
+// A cue sheet is minutes of listening and a paid model call; a render on the GPU box is hours. Neither may live only in
+// a tab. The session is written when cues are written and whenever the desk opens; loading the same song (or RESUME on
+// the load screen) brings the sheet back and, if a render was open, re-attaches to the box's jobs by their keys.
+export async function saveSession(songId, data) { const d = await db(); return new Promise((res) => { const t = d.transaction('sessions', 'readwrite').objectStore('sessions').put({ ...data, songId, at: Date.now() }, songId); t.onsuccess = () => res(); t.onerror = () => res(); }); }
+export async function getSession(songId) { const d = await db(); return new Promise((res) => { const t = d.transaction('sessions').objectStore('sessions').get(songId); t.onsuccess = () => res(t.result || null); t.onerror = () => res(null); }); }
+export async function latestSession() { const d = await db(); return new Promise((res) => { const t = d.transaction('sessions').objectStore('sessions').getAll(); t.onsuccess = () => res((t.result || []).sort((a, b) => b.at - a.at)[0] || null); t.onerror = () => res(null); }); }
+export async function deleteSession(songId) { const d = await db(); return new Promise((res) => { const t = d.transaction('sessions', 'readwrite').objectStore('sessions').delete(songId); t.onsuccess = () => res(); t.onerror = () => res(); }); }
 // A clip is keyed by what produced it: song, scene, frame size, the model, and the exact prompt (shot + direction).
 // Edit the shot, the direction or the model and the key changes, so the next RENDER pays for that scene again and no other.
 export const clipKey = (songId, scene, size, direction = '', model = loadConfig().model) => `${songId}:${scene.n}:${size}:${model}:${hash(scene.shot + '\n' + String(direction || '').trim())}`;
@@ -22,13 +30,16 @@ function hash(s) { let h = 2166136261; for (const ch of String(s)) { h ^= ch.cha
 // Pool width: Higgsfield's default account limit is 4 concurrent; Sora's preview is 2; a GPU box queues
 // everything itself, so the pool just keeps a few status polls going.
 export class FootageJob {
-  constructor({ songId, scenes, analysis, size, direction = '', onUpdate }) {
+  constructor({ songId, scenes, analysis, size, direction = '', onUpdate, retakes = {} }) {
     Object.assign(this, { songId, scenes, analysis, size, direction, onUpdate });
     this.cfg = loadConfig(); this.model = modelFor(this.cfg); this.engine = engine(this.cfg);
     const beat = 60 / analysis.bpm;
-    this.items = scenes.map((s) => { const p = this.engine.plan(s, beat); return { scene: s, state: 'queued', progress: 0, id: null, blob: null, url: null, error: null, cached: false, retake: 0, seconds: p.seconds, price: p.price, eta: null, position: null }; });
+    // retakes: scene n → take count from a saved session, so a re-attached desk asks the box for the SAME attempt (same key)
+    this.items = scenes.map((s) => { const p = this.engine.plan(s, beat); return { scene: s, state: 'queued', progress: 0, id: null, blob: null, url: null, error: null, cached: false, retake: retakes[s.n] || 0, seconds: p.seconds, price: p.price, eta: null, position: null }; });
     this.stopped = false; this.inflight = 0; this.MAX = this.engine.name === 'sora' ? 2 : this.engine.name === 'gpu' ? 3 : 4;
   }
+  // what a saved session needs to rebuild this desk: which take each scene is on
+  get retakes() { const r = {}; for (const it of this.items) if (it.retake) r[it.scene.n] = it.retake; return r; }
   async start() {
     // anything already in the cache lands instantly
     for (const it of this.items) { const c = await getClip(this.key(it)); if (c) { it.blob = c.blob; it.url = URL.createObjectURL(c.blob); it.state = 'done'; it.progress = 1; it.cached = true; } }

@@ -32,6 +32,9 @@ MODEL = os.environ.get('WAN_MODEL', 'Wan2_2-TI2V-5B-Turbo_fp16.safetensors' if M
 STEPS = int(os.environ.get('CUE_RENDER_STEPS', '4' if MODE == 'turbo' else '20')); CFG = float(os.environ.get('CUE_RENDER_CFG', '1.0' if MODE == 'turbo' else '5.0')); SHIFT = float(os.environ.get('CUE_RENDER_SHIFT', '8.0'))
 FPS = 24
 SEC_PER_SEC = float(os.environ.get('CUE_RENDER_SEC_PER_SEC', '75' if MODE == 'turbo' else '300'))
+# self-healing: a job is declared stalled at STALL_FACTOR × its expected time (never under STALL_MIN_S, which covers a cold
+# model load), interrupted, and tried again; after MAX_TRIES it fails with the reason, and the desk shows it
+STALL_FACTOR = float(os.environ.get('CUE_RENDER_STALL_FACTOR', '3')); STALL_MIN_S = float(os.environ.get('CUE_RENDER_STALL_MIN_S', '900')); MAX_TRIES = int(os.environ.get('CUE_RENDER_MAX_TRIES', '3'))
 PERSIST = os.path.join(WORK, 'jobs.json')  # the queue survives a restart: an overnight sheet must not depend on the browser or this process staying up
 NEG = ('色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走, '
        'text, watermark, subtitles, logo, caption')
@@ -68,15 +71,27 @@ def render_comfy(job):
     req = urllib.request.Request(COMFY + '/prompt', data=json.dumps({"prompt": g, "client_id": "cue-render"}).encode(), headers={'Content-Type': 'application/json'})
     try: pid = json.load(urllib.request.urlopen(req, timeout=60))['prompt_id']
     except urllib.error.HTTPError as e: raise RuntimeError('ComfyUI rejected the graph: ' + e.read().decode()[:400])
+    except Exception as e: raise RuntimeError(f'ComfyUI not answering: {e}')
     t0 = time.time(); est = job['seconds'] * SEC_PER_SEC
+    # The owner never manages the ComfyUI queue: if a render takes far longer than it should (a hung CUDA kernel, a wedged
+    # worker), this box interrupts it and raises; the worker loop requeues the job up to MAX_TRIES times.
+    limit = max(STALL_MIN_S, est * STALL_FACTOR); misses = 0
     while True:
-        h = json.load(urllib.request.urlopen(f"{COMFY}/history/{pid}", timeout=60))
+        try: h = json.load(urllib.request.urlopen(f"{COMFY}/history/{pid}", timeout=60)); misses = 0
+        except Exception:
+            misses += 1
+            if misses >= 15: raise RuntimeError('ComfyUI stopped answering during the render')   # ~30 s of silence
+            time.sleep(2); continue
         if pid in h:
             st = h[pid].get('status', {})
             if st.get('status_str') == 'error':
                 msgs = [m[1].get('exception_message', '') for m in st.get('messages', []) if m[0] == 'execution_error']
                 raise RuntimeError('render failed: ' + (msgs[0] if msgs else 'unknown')[:400])
             break
+        if time.time() - t0 > limit:
+            try: urllib.request.urlopen(urllib.request.Request(COMFY + '/interrupt', data=b'', method='POST'), timeout=10)
+            except Exception: pass
+            raise RuntimeError(f'render stalled: no result after {int(limit)} s (expected about {int(est)} s); interrupted')
         job['progress'] = min(0.95, (time.time() - t0) / est); job['eta'] = max(0, int(est - (time.time() - t0)))
         time.sleep(2)
     pngs = sorted(glob.glob(f"{COMFY_OUT}/{name}_*.png"))
@@ -125,7 +140,7 @@ def load():
         for jid in d.get('order', []):
             j = d['jobs'].get(jid)
             if not j: continue
-            if j['status'] == 'running': j['status'] = 'queued'; j['progress'] = 0.0   # was mid-render when we died: do it again
+            if j['status'] == 'running': j['status'] = 'queued'; j['progress'] = 0.0   # was mid-render when we died: do it again (tries carries over)
             if j['status'] == 'done' and not (j.get('path') and os.path.exists(j['path'])): j['status'] = 'queued'; j['progress'] = 0.0
             jobs[jid] = j; order.append(jid)
         by_key.update(d.get('by_key', {}))
@@ -137,13 +152,19 @@ def worker():
         job = None
         with lock:
             for jid in order:
-                if jobs[jid]['status'] == 'queued': job = jobs[jid]; job['status'] = 'running'; job['started'] = time.time(); break
+                if jobs[jid]['status'] == 'queued': job = jobs[jid]; job['status'] = 'running'; job['started'] = time.time(); job['tries'] = job.get('tries', 0) + 1; break
         if not job: time.sleep(1); continue
         save()
         try:
-            job['path'] = RENDER(job); job['status'] = 'done'; job['progress'] = 1.0; job['eta'] = 0
+            job['path'] = RENDER(job); job['status'] = 'done'; job['progress'] = 1.0; job['eta'] = 0; job.pop('error', None)
         except Exception as e:
-            job['status'] = 'failed'; job['error'] = str(e)[:500]
+            msg = str(e)[:500]
+            if job['tries'] < MAX_TRIES:
+                # stalled or ComfyUI hiccup: back of the running slot, try again; the desk sees 'queued' with the reason
+                print(f"job {job['id']} try {job['tries']} failed ({msg}); requeued", flush=True)
+                job['status'] = 'queued'; job['progress'] = 0.0; job['eta'] = None; job['error'] = f'retrying after: {msg}'
+                save(); time.sleep(5); continue
+            job['status'] = 'failed'; job['error'] = f'{msg} (after {job["tries"]} tries)'
         job['finished'] = time.time()
         sweep(); save()
 
