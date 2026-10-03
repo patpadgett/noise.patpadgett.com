@@ -37,7 +37,7 @@ export function footageConfigured(cfg = loadConfig()) {
 // Prices are Higgsfield's published standard per-second rates (console.higgsfield.ai, read 2026-10-02); a promo
 // can be lower, never higher, so the RENDER key's figure is a ceiling. The estimate endpoint gives the exact number.
 export const MODELS = {
-  'local':       { engine: 'gpu',        label: 'This GPU (Wan 2.2 5B)', min: 1, max: 5, price: { '720p': 0 }, resolutions: ['720p'], note: 'free · the owner\'s render box · about 5 min per second of footage on a T4', cfgKeys: ['localUrl', 'localToken'] },
+  'local':       { engine: 'gpu',        label: 'This GPU (Wan 2.2 5B)', min: 1, max: 5, price: { '720p': 0 }, resolutions: ['720p'], note: 'free · the owner\'s render box · Turbo: about 6 min per 5 s clip on a T4', cfgKeys: ['localUrl', 'localToken'] },
   'kling-std':   { engine: 'higgsfield', label: 'Kling 3.0 Standard', path: 'kling-video/v3.0/std/text-to-video',   min: 3, max: 15, price: { '720p': 0.084, '1080p': 0.084 }, resolutions: ['720p'], note: 'best realism per dollar · 720p' },
   'kling-turbo': { engine: 'higgsfield', label: 'Kling 3.0 Turbo',    path: 'kling-video/v3.0-turbo/text-to-video', min: 3, max: 15, price: { '720p': 0.112, '1080p': 0.14 },  resolutions: ['720p', '1080p'], note: 'fast · 720p or 1080p' },
   'kling-pro':   { engine: 'higgsfield', label: 'Kling 3.0 Pro',      path: 'kling-video/v3.0/pro/text-to-video',   min: 3, max: 15, price: { '720p': 0.168, '1080p': 0.168 }, resolutions: ['1080p'], note: 'hero shots · 1080p' },
@@ -189,7 +189,7 @@ const gpuEngine = {
     const cfg = loadConfig(); const [url, headers] = gpu(cfg, `jobs/${id}/video`);
     const res = await fetch(url, { headers }); if (!res.ok) throw new Error(`download ${res.status}`); return await res.blob();
   },
-  async probe() { try { const cfg = loadConfig(); const [url, headers] = gpu(cfg, 'health'); const r = await fetch(url, { headers }); if (!r.ok) return r.status === 401 ? 'bad token' : `${r.status}`; const h = await r.json(); return h.gpu ? `ok · ${h.gpu}${h.queue ? ` · ${h.queue} queued` : ''}` : 'ok'; } catch (e) { return e.message; } },
+  async probe() { try { const cfg = loadConfig(); const [url, headers] = gpu(cfg, 'health'); const r = await fetch(url, { headers }); if (!r.ok) return r.status === 401 ? 'bad token' : `${r.status}`; const h = await r.json(); return h.gpu ? `ok · ${h.gpu}${h.model ? ` · ${h.model}` : ''}${h.queue ? ` · ${h.queue} in the queue` : ''}` : 'ok'; } catch (e) { return e.message; } },
 };
 
 const ENGINES = { sora, higgsfield, gpu: gpuEngine };

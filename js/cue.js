@@ -272,7 +272,10 @@ class App {
     if (!footageConfigured()) { this.openSetup(); return this.toast(`Rendering footage needs a key for ${modelFor().label} (SETUP).`, true); }
     if (this.job) { this.job.resume(); return; } // same treatment and size: resume, re-queue failures, pay for nothing already in
     const est = this.est, m = modelFor(); $('#renderdesk').hidden = false;
-    const time = m.engine === 'gpu' ? `One clip at a time on your GPU, about 5 minutes per second of footage: this sheet is roughly ${Math.round(est.seconds * 300 / 3600 * 10) / 10} hours. The queue lives on the render box, so you can close this tab; RENDER later collects what has finished.` : `${this.job?.MAX || 4} render at a time; a 3-minute song takes 10–20 minutes. Keep listening.`;
+    // the GPU box renders one clip at a time; its rate (seconds of GPU per second of footage) is learned from the box itself
+    // on the first job and remembered, so the estimate here is honest for turbo (~75) and quality (~300) boxes alike
+    const sps = +(localStorage.getItem('cue.gpu.secPerSec') || 0) || 300, hrs = est.seconds * sps / 3600;
+    const time = m.engine === 'gpu' ? `One clip at a time on your GPU, about ${Math.round(sps / 60)} minute${sps >= 90 ? 's' : ''} per second of footage: this sheet is roughly ${hrs >= 1.5 ? `${Math.round(hrs * 10) / 10} hours` : `${Math.round(hrs * 60)} minutes`}. The queue lives on the render box, so you can close this tab; RENDER later collects what has finished.` : `${this.job?.MAX || 4} render at a time; a 3-minute song takes 10–20 minutes. Keep listening.`;
     const money = est.free ? 'free' : `about $${est.dollars.toFixed(2)} on your ${m.engine === 'higgsfield' ? 'Higgsfield balance' : 'Azure'}`;
     $('#render-line').textContent = `${est.clips} clips · ${est.seconds}s of footage by ${m.label} · ${money}, less whatever is already cached. ${time}`;
     await this.openDesk(false);
@@ -328,7 +331,7 @@ class App {
     // one line of truth for progress; the failure reason gets its own line under it so it is never cut to a tile or crammed into a sentence
     const reasons = [...new Set(failedItems.map((i) => String(i.error || '').replace(/[.\s]+$/, '')).filter(Boolean))];
     // on a GPU box the honest figure is machine time, not footage seconds: footage × the box's measured seconds-per-second
-    const gpuMin = (secs) => { const m = Math.round(secs * (j.secPerSec || 300) / 60); return m >= 90 ? `${(m / 60).toFixed(1)} h` : `${m} min`; };
+    const gpuMin = (secs) => { const m = Math.round(secs * (j.secPerSec || +(localStorage.getItem('cue.gpu.secPerSec') || 0) || 300) / 60); return m >= 90 ? `${(m / 60).toFixed(1)} h` : `${m} min`; };
     const spent = j.model.engine === 'gpu' ? `${gpuMin(j.spent)} of GPU time` : `$${j.spentDollars.toFixed(2)}`;
     const line = $('#render-line'), key = $('#render'), whyEl = $('#render-why');
     // the reason a clip failed goes on its own line, whole; the status line stays one sentence

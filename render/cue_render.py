@@ -21,14 +21,15 @@ ORIGINS = [o.strip() for o in os.environ.get('CUE_RENDER_ORIGINS', 'https://nois
 WORK = os.environ.get('CUE_RENDER_WORK', '/tmp/cue-render'); os.makedirs(WORK, exist_ok=True)
 RETENTION_H = float(os.environ.get('CUE_RENDER_RETENTION_H', '24'))
 COMFY = os.environ.get('COMFY_URL', 'http://127.0.0.1:8188'); COMFY_OUT = os.environ.get('COMFY_OUTPUT', '/data/comfy/ComfyUI/output')
-# Two ways to run Wan 2.2 5B on a small GPU, measured on a Tesla T4 (fp16, 1280x704):
-#   quality: base checkpoint, 20 steps, CFG 5, uni_pc, shift 8      ~5 min per second of footage (sampling ~45 s/step)
-#   turbo:   Wan2.2-TI2V-5B-Turbo (DMD-distilled) — 25x faster sampling, but on a T4 (fp16, no bf16) every configuration tried
-#            (LoRA on base; fused checkpoint, euler; fused checkpoint on its trained t=1000/750/500/250 schedule, LCM) came out as
-#            unresolved noise with melting objects. Kept selectable for cards with bf16; NOT the default.
-MODE = os.environ.get('CUE_RENDER_MODE', 'quality')
+# Two ways to run Wan 2.2 5B on a small GPU, measured on a Tesla T4 (fp16, 1280x704, 5 s clips):
+#   turbo (default): Wan2.2-TI2V-5B-Turbo (DMD-distilled, Kijai fp16 repack) on its trained t=1000/750/500/250 schedule,
+#            LCM sampler, no CFG, shift 8 — ~6 min per 5 s clip (4 x ~40 s sampling + VAE). Sharper and brighter than
+#            the base model; busier: objects drift between frames, prompt restraint weaker, so expect more RETAKEs.
+#            Shift 5 (the training value) came out as unresolved noise on this card; 8 is the one that resolves.
+#   quality: base checkpoint, 20 steps, CFG 5, uni_pc, shift 8 — ~25 min per 5 s clip; softer, darker, steadier.
+MODE = os.environ.get('CUE_RENDER_MODE', 'turbo')
 MODEL = os.environ.get('WAN_MODEL', 'Wan2_2-TI2V-5B-Turbo_fp16.safetensors' if MODE == 'turbo' else 'wan2.2_ti2v_5B_fp16.safetensors')
-STEPS = int(os.environ.get('CUE_RENDER_STEPS', '4' if MODE == 'turbo' else '20')); CFG = float(os.environ.get('CUE_RENDER_CFG', '1.0' if MODE == 'turbo' else '5.0')); SHIFT = float(os.environ.get('CUE_RENDER_SHIFT', '5.0' if MODE == 'turbo' else '8.0'))
+STEPS = int(os.environ.get('CUE_RENDER_STEPS', '4' if MODE == 'turbo' else '20')); CFG = float(os.environ.get('CUE_RENDER_CFG', '1.0' if MODE == 'turbo' else '5.0')); SHIFT = float(os.environ.get('CUE_RENDER_SHIFT', '8.0'))
 FPS = 24
 SEC_PER_SEC = float(os.environ.get('CUE_RENDER_SEC_PER_SEC', '75' if MODE == 'turbo' else '300'))
 PERSIST = os.path.join(WORK, 'jobs.json')  # the queue survives a restart: an overnight sheet must not depend on the browser or this process staying up
@@ -189,8 +190,8 @@ class H(BaseHTTPRequestHandler):
         if not self.authed(): return self.send(401, {'error': 'bad token'})
         p = self.path.split('?')[0]
         if p == '/health':
-            with lock: q = sum(1 for j in jobs.values() if j['status'] in ('queued', 'running'))
-            return self.send(200, {'ok': True, 'gpu': gpu_name(), 'queue': q, 'model': f"Wan 2.2 TI2V-5B {'Turbo' if MODE == 'turbo' else ''}".strip(), 'mode': MODE, 'backend': BACKEND, 'secPerSec': SEC_PER_SEC})
+            with lock: q = sum(1 for j in jobs.values() if j['status'] in ('queued', 'running')); d = sum(1 for j in jobs.values() if j['status'] == 'done')
+            return self.send(200, {'ok': True, 'gpu': gpu_name(), 'queue': q, 'model': f"Wan 2.2 TI2V-5B {'Turbo' if MODE == 'turbo' else ''}".strip(), 'mode': MODE, 'backend': BACKEND, 'secPerSec': SEC_PER_SEC, 'done': d})
         if p.startswith('/jobs/'):
             parts = p.split('/'); jid = parts[2]; job = jobs.get(jid)
             if not job: return self.send(404, {'error': 'no such job'})

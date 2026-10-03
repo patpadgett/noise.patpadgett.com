@@ -73,7 +73,7 @@ export class FootageJob {
       const prompt = soraPrompt(it.scene, this.size, this.direction);
       // the idempotency key names this exact attempt: a network retry of the same create never makes a second job
       const v = await this.engine.create({ prompt, size: this.size, seconds: it.seconds, key: `${this.key(it)}:${it.retake}` });
-      it.id = v.id; if (v.secPerSec) this.secPerSec = v.secPerSec; it.billed = (it.billed || 0) + it.seconds; it.billedDollars = (it.billedDollars || 0) + it.price; it.state = 'running'; this.emit();
+      it.id = v.id; if (v.secPerSec) { this.secPerSec = v.secPerSec; try { localStorage.setItem('cue.gpu.secPerSec', String(v.secPerSec)); } catch {} } it.billed = (it.billed || 0) + it.seconds; it.billedDollars = (it.billedDollars || 0) + it.price; it.state = 'running'; this.emit();
       for (;;) {
         // a GPU box renders one clip at a time and a whole sheet is queued on it: poll the ones far back in the line slowly
         await sleep(this.submitAll && it.position > 1 ? 15000 : 4000);
